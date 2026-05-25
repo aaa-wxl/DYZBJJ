@@ -1,0 +1,46 @@
+schema: spec-driven
+
+context: |
+  语言：中文。
+  所有文档型描述、叙述性说明、提案、需求、任务、设计说明和规格文本都必须使用中文。
+  所有生成的代码都必须包含简洁明确的中文注释，用于说明包、模块、核心类型、核心函数和关键业务分支。
+  注释应解释业务意图和边界条件，避免逐行复述代码。
+  代码标识符、文件路径、命令、API 名称和协议关键字在翻译后会降低清晰度时，保留原文。
+
+rules:
+  proposal:
+    - 所有正文描述都使用中文。
+    - 技术标识符、命令、文件路径和 API 名称保留原文。
+  design:
+    - 所有正文描述都使用中文。
+    - 技术标识符、命令、文件路径和 API 名称保留原文。
+  tasks:
+    - 所有任务描述都使用中文。
+    - 技术标识符、命令、文件路径和 API 名称保留原文。
+  specs:
+    - 所有需求和场景描述都使用中文。
+    - 规格格式要求使用 MUST、SHOULD、MAY 等 RFC 2119 关键字时，保留这些关键字原文。
+  code:
+    - 所有生成的代码都必须包含简洁明确的中文注释。
+    - 注释重点覆盖包或模块职责、核心类型、核心函数、关键业务分支和不明显的边界条件。
+    - 避免为每一行代码添加机械注释，避免复述语法本身。
+    - 技术标识符、命令、文件路径和 API 名称保留原文。
+
+# Project context (optional)
+# This is shown to AI when creating artifacts.
+# Add your tech stack, conventions, style guides, domain knowledge, etc.
+# Example:
+#   context: |
+#     Tech stack: TypeScript, React, Node.js
+#     We use conventional commits
+#     Domain: e-commerce platform
+
+# Per-artifact rules (optional)
+# Add custom rules for specific artifacts.
+# Example:
+#   rules:
+#     proposal:
+#       - Keep proposals under 500 words
+#       - Always include a "Non-goals" section
+#     tasks:
+#       - Break tasks into chunks of max 2 hours

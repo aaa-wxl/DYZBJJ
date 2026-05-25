@@ -1,0 +1,310 @@
+:root {
+  /* 竞拍控制台使用深色作战台配色，突出价格和状态变化。 */
+  color: #f4f1e8;
+  background: #12110f;
+  font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif;
+  --panel: #1d1b17;
+  --line: #3d372d;
+  --gold: #d7a84b;
+  --red: #d9543f;
+  --green: #66c18c;
+  --ink: #12110f;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+button {
+  border: 1px solid var(--gold);
+  border-radius: 6px;
+  background: var(--gold);
+  color: var(--ink);
+  min-height: 40px;
+  padding: 0 14px;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+input,
+textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #11100e;
+  color: #f4f1e8;
+  padding: 10px;
+}
+
+textarea {
+  min-height: 74px;
+  resize: vertical;
+}
+
+.shell {
+  /* 背景网格弱化装饰感，保持操作界面可扫描。 */
+  min-height: 100vh;
+  padding: 24px;
+  background:
+    linear-gradient(135deg, rgba(215, 168, 75, 0.16), transparent 32%),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.025) 0 1px, transparent 1px 48px),
+    #12110f;
+}
+
+.topbar {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.eyebrow {
+  margin: 0 0 8px;
+  color: var(--gold);
+  text-transform: uppercase;
+  letter-spacing: 0;
+  font-size: 12px;
+}
+
+h1,
+h2 {
+  margin: 0;
+  letter-spacing: 0;
+}
+
+h1 {
+  font-size: clamp(28px, 5vw, 54px);
+}
+
+.status-strip {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px 16px;
+  min-width: 180px;
+  background: rgba(29, 27, 23, 0.86);
+}
+
+.status-strip span,
+.metric span {
+  display: block;
+  color: #b8ad9c;
+  font-size: 12px;
+}
+
+.status-strip strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 28px;
+  color: var(--gold);
+}
+
+.workspace {
+  /* 桌面端并排展示主播端和用户端，方便演示完整闭环。 */
+  display: grid;
+  grid-template-columns: minmax(360px, 0.96fr) minmax(420px, 1.2fr);
+  gap: 18px;
+}
+
+.panel {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(29, 27, 23, 0.94);
+  padding: 16px;
+}
+
+.panel-head,
+.actions,
+.bidline {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.panel-head {
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+label {
+  display: grid;
+  gap: 6px;
+  color: #d8cfbd;
+  font-size: 13px;
+}
+
+.wide {
+  grid-column: 1 / -1;
+}
+
+.auction-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.auction-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-color: var(--line);
+  background: #11100e;
+  color: #f4f1e8;
+}
+
+.auction-row.active {
+  border-color: var(--gold);
+  box-shadow: inset 4px 0 0 var(--gold);
+}
+
+.auction-row em {
+  color: var(--green);
+  font-style: normal;
+  font-size: 12px;
+}
+
+.actions {
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+
+.actions button {
+  background: transparent;
+  color: var(--gold);
+}
+
+.video-stage {
+  /* 直播画面区域使用商品图作为第一视觉信号。 */
+  min-height: 320px;
+  border-radius: 8px;
+  background-position: center;
+  background-size: cover;
+  padding: 24px;
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  border: 1px solid var(--line);
+}
+
+.video-stage p {
+  margin: 0 0 8px;
+  color: #d8cfbd;
+}
+
+.video-stage h2 {
+  max-width: 520px;
+  font-size: clamp(24px, 4vw, 46px);
+}
+
+.price-tag {
+  border-radius: 8px;
+  background: var(--red);
+  color: white;
+  padding: 14px 18px;
+  font-size: 30px;
+  font-weight: 800;
+}
+
+.bid-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin: 14px 0;
+}
+
+.metric {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: #11100e;
+}
+
+.metric strong {
+  display: block;
+  margin-top: 8px;
+  color: #f4f1e8;
+  overflow-wrap: anywhere;
+}
+
+.bidline {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+}
+
+.timeline {
+  /* 实时事件日志用于观察 WebSocket 推送效果。 */
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.timeline p {
+  margin: 0;
+  border-left: 3px solid var(--gold);
+  background: #11100e;
+  padding: 9px 10px;
+  color: #d8cfbd;
+}
+
+.result {
+  margin: 18px 0 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 16px;
+  overflow: auto;
+  background: #11100e;
+  color: #d8cfbd;
+}
+
+@media (max-width: 980px) {
+  .workspace,
+  .topbar {
+    grid-template-columns: 1fr;
+    display: grid;
+  }
+
+  .bid-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 620px) {
+  .shell {
+    padding: 14px;
+  }
+
+  .form-grid,
+  .bidline,
+  .bid-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .video-stage {
+    min-height: 260px;
+    align-items: start;
+    flex-direction: column;
+  }
+}
