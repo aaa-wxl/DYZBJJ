@@ -101,7 +101,7 @@ func (s *Server) createAuction(w nethttp.ResponseWriter, r *nethttp.Request) {
 	writeJSON(w, nethttp.StatusCreated, a)
 }
 
-// startAuction 将 DRAFT/SCHEDULED 竞拍启动为 RUNNING。
+// startAuction 将 DRAFT 竞拍启动为 RUNNING。
 func (s *Server) startAuction(w nethttp.ResponseWriter, r *nethttp.Request) {
 	snapshot, err := s.service.StartAuction(r.PathValue("id"), time.Now().UTC())
 	if err != nil {

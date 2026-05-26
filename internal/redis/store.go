@@ -185,6 +185,9 @@ func (s *MemoryStore) FinishExpired(auctionID string, now time.Time) (auction.Sn
 	if !ok {
 		return auction.Snapshot{}, ErrAuctionNotFound
 	}
+	if snapshot.Status != auction.StatusRunning {
+		return snapshot, fmt.Errorf("%w: cannot finish status %s", ErrBidRejected, snapshot.Status)
+	}
 	if now.Before(snapshot.EndsAt) {
 		return snapshot, fmt.Errorf("%w: auction has not ended", ErrBidRejected)
 	}
