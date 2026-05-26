@@ -22,10 +22,31 @@ const (
 	StatusCancelled Status = "CANCELLED"
 )
 
+type Role string
+
+const (
+	RoleAdmin  Role = "ADMIN"
+	RoleBidder Role = "BIDDER"
+)
+
 var (
 	ErrInvalidRules      = errors.New("invalid auction rules")
 	ErrInvalidTransition = errors.New("invalid auction state transition")
 )
+
+type User struct {
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	Role      Role      `json:"role"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+type Session struct {
+	Token     string    `json:"token"`
+	UserID    string    `json:"userId"`
+	ExpiresAt time.Time `json:"expiresAt"`
+	CreatedAt time.Time `json:"createdAt"`
+}
 
 type Product struct {
 	Name        string `json:"name"`

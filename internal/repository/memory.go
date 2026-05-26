@@ -3,12 +3,15 @@ package repository
 
 import (
 	"sync"
+	"time"
 
 	"realtime-auction-core/internal/domain/auction"
 )
 
 type MemoryRepository struct {
 	mu       sync.Mutex
+	users    map[string]auction.User
+	sessions map[string]auction.Session
 	auctions map[string]auction.Auction
 	bids     map[string][]auction.Bid
 	orders   map[string]auction.Order
@@ -17,10 +20,40 @@ type MemoryRepository struct {
 // NewMemoryRepository 创建线程安全的内存 repository。
 func NewMemoryRepository() *MemoryRepository {
 	return &MemoryRepository{
+		users:    map[string]auction.User{},
+		sessions: map[string]auction.Session{},
 		auctions: map[string]auction.Auction{},
 		bids:     map[string][]auction.Bid{},
 		orders:   map[string]auction.Order{},
 	}
+}
+
+func (r *MemoryRepository) SaveUser(user auction.User) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.users[user.ID] = user
+	return nil
+}
+
+func (r *MemoryRepository) SaveSession(session auction.Session) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.sessions[session.Token] = session
+	return nil
+}
+
+func (r *MemoryRepository) GetUserByToken(token string) (auction.User, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	session, ok := r.sessions[token]
+	if !ok || !time.Now().UTC().Before(session.ExpiresAt) {
+		return auction.User{}, ErrNotFound
+	}
+	user, ok := r.users[session.UserID]
+	if !ok {
+		return auction.User{}, ErrNotFound
+	}
+	return user, nil
 }
 
 func (r *MemoryRepository) CreateAuction(a auction.Auction) (auction.Auction, error) {

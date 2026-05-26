@@ -10,6 +10,9 @@ import (
 var ErrNotFound = errors.New("record not found")
 
 type AuctionRepository interface {
+	SaveUser(auction.User) error
+	SaveSession(auction.Session) error
+	GetUserByToken(token string) (auction.User, error)
 	CreateAuction(auction.Auction) (auction.Auction, error)
 	UpdateAuction(auction.Auction) error
 	GetAuction(id string) (auction.Auction, error)
