@@ -13,6 +13,7 @@ import (
 
 var ErrUnauthorized = errors.New("unauthorized")
 var ErrForbidden = errors.New("forbidden")
+var ErrAuthStorage = errors.New("auth storage failed")
 
 type AuthService struct {
 	repo repository.AuctionRepository
@@ -54,10 +55,10 @@ func (s *AuthService) Login(name string, role auction.Role) (LoginSession, error
 		CreatedAt: now,
 	}
 	if err := s.repo.SaveUser(user); err != nil {
-		return LoginSession{}, err
+		return LoginSession{}, ErrAuthStorage
 	}
 	if err := s.repo.SaveSession(session); err != nil {
-		return LoginSession{}, err
+		return LoginSession{}, ErrAuthStorage
 	}
 	return LoginSession{Token: token, User: user}, nil
 }
@@ -69,10 +70,7 @@ func (s *AuthService) Require(token string, role auction.Role) (auction.User, er
 	}
 	user, err := s.repo.GetUserByToken(token)
 	if err != nil {
-		if errors.Is(err, repository.ErrNotFound) {
-			return auction.User{}, ErrUnauthorized
-		}
-		return auction.User{}, err
+		return auction.User{}, ErrUnauthorized
 	}
 	if user.Role != role {
 		return auction.User{}, ErrForbidden
