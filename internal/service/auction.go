@@ -3,6 +3,7 @@ package service
 
 import (
 	"fmt"
+	"sync"
 	"time"
 
 	"realtime-auction-core/internal/domain/auction"
@@ -16,6 +17,8 @@ type AuctionService struct {
 	store      redis.Store
 	hub        *ws.Hub
 	settlement *SettlementService
+	timerMu    sync.Mutex
+	timers     map[string]*time.Timer
 }
 
 // NewAuctionService 组装竞拍应用服务依赖。
@@ -25,6 +28,7 @@ func NewAuctionService(repo repository.AuctionRepository, store redis.Store, hub
 		store:      store,
 		hub:        hub,
 		settlement: NewSettlementService(repo),
+		timers:     map[string]*time.Timer{},
 	}
 }
 
@@ -63,6 +67,7 @@ func (s *AuctionService) StartAuction(id string, now time.Time) (auction.Snapsho
 	if err := s.store.InitAuction(snapshot); err != nil {
 		return auction.Snapshot{}, err
 	}
+	s.scheduleFinish(id, snapshot.EndsAt)
 	s.hub.Broadcast(ws.Event{Type: ws.EventSnapshot, AuctionID: id, Snapshot: snapshot})
 	return snapshot, nil
 }
@@ -83,6 +88,7 @@ func (s *AuctionService) CancelAuction(id string, now time.Time) (auction.Snapsh
 	if err != nil {
 		snapshot = a.ToSnapshot(now)
 	}
+	s.stopFinishTimer(id)
 	s.hub.Broadcast(ws.Event{Type: ws.EventAuctionCancelled, AuctionID: id, Snapshot: snapshot, Reason: "merchant_cancelled"})
 	return snapshot, nil
 }
@@ -116,9 +122,11 @@ func (s *AuctionService) PlaceBid(command redis.BidCommand) (redis.BidResult, er
 	reason := ""
 	if result.Snapshot.Status == auction.StatusSold {
 		// 成交事件使用结束广播，前端据此锁定出价入口。
+		s.stopFinishTimer(command.AuctionID)
 		eventType = ws.EventAuctionEnded
 		reason = "ceiling_price_reached"
 	} else if result.Extended {
+		s.scheduleFinish(command.AuctionID, result.Snapshot.EndsAt)
 		eventType = ws.EventAuctionExtended
 		reason = "bid_near_end"
 	}
@@ -135,6 +143,7 @@ func (s *AuctionService) FinishExpired(id string, now time.Time) (auction.Snapsh
 	if err := s.syncAuctionFromSnapshot(snapshot); err != nil {
 		return auction.Snapshot{}, err
 	}
+	s.stopFinishTimer(id)
 	s.hub.Broadcast(ws.Event{Type: ws.EventAuctionEnded, AuctionID: id, Snapshot: snapshot, Reason: "time_expired"})
 	return snapshot, nil
 }
@@ -182,4 +191,41 @@ func (s *AuctionService) syncAuctionFromSnapshot(snapshot auction.Snapshot) erro
 		}
 	}
 	return nil
+}
+
+func (s *AuctionService) scheduleFinish(id string, endsAt time.Time) {
+	delay := time.Until(endsAt)
+	if delay < 0 {
+		delay = 0
+	}
+
+	var timer *time.Timer
+	timer = time.AfterFunc(delay, func() {
+		_, _ = s.FinishExpired(id, time.Now().UTC())
+		s.clearFinishTimer(id, timer)
+	})
+
+	s.timerMu.Lock()
+	if existing := s.timers[id]; existing != nil {
+		existing.Stop()
+	}
+	s.timers[id] = timer
+	s.timerMu.Unlock()
+}
+
+func (s *AuctionService) stopFinishTimer(id string) {
+	s.timerMu.Lock()
+	if timer := s.timers[id]; timer != nil {
+		timer.Stop()
+		delete(s.timers, id)
+	}
+	s.timerMu.Unlock()
+}
+
+func (s *AuctionService) clearFinishTimer(id string, timer *time.Timer) {
+	s.timerMu.Lock()
+	if s.timers[id] == timer {
+		delete(s.timers, id)
+	}
+	s.timerMu.Unlock()
 }
