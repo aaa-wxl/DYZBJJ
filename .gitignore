@@ -2,3 +2,12 @@
 web/node_modules/
 web/dist/
 web/tsconfig.tsbuildinfo
+web/test-results/
+.backend*.log
+.frontend*.log
+.superpowers/
+.superpowers
+.worktrees/
+.worktrees
+data/
+data
