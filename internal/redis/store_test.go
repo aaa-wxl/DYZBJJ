@@ -179,6 +179,98 @@ func TestStorePlaceBidExtensionKeepsAuctionRunning(t *testing.T) {
 	}
 }
 
+func TestStoreCancelAllowsDraftAndRunning(t *testing.T) {
+	now := time.Unix(200, 0)
+	tests := []struct {
+		name   string
+		status auction.Status
+	}{
+		{name: "draft", status: auction.StatusDraft},
+		{name: "running", status: auction.StatusRunning},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := NewMemoryStore()
+			if err := store.InitAuction(auction.Snapshot{
+				AuctionID:    "auction-1",
+				Status:       tt.status,
+				CurrentPrice: 0,
+				EndsAt:       now.Add(time.Minute),
+				Rules: auction.Rules{
+					StartPrice:      0,
+					Increment:       100,
+					Duration:        time.Minute,
+					CeilingPrice:    1000,
+					ExtendThreshold: 20 * time.Second,
+					ExtendBy:        30 * time.Second,
+				},
+			}); err != nil {
+				t.Fatalf("init auction: %v", err)
+			}
+
+			result, err := store.Cancel("auction-1", now)
+			if err != nil {
+				t.Fatalf("cancel: %v", err)
+			}
+			if result.Status != auction.StatusCancelled {
+				t.Fatalf("status = %s, want %s", result.Status, auction.StatusCancelled)
+			}
+		})
+	}
+}
+
+func TestStoreCancelRejectsTerminalStatuses(t *testing.T) {
+	now := time.Unix(200, 0)
+	tests := []struct {
+		name   string
+		status auction.Status
+	}{
+		{name: "sold", status: auction.StatusSold},
+		{name: "ended", status: auction.StatusEnded},
+		{name: "cancelled", status: auction.StatusCancelled},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := NewMemoryStore()
+			if err := store.InitAuction(auction.Snapshot{
+				AuctionID:     "auction-1",
+				Status:        tt.status,
+				CurrentPrice:  100,
+				HighestBidder: "user-1",
+				EndsAt:        now.Add(-time.Second),
+				Rules: auction.Rules{
+					StartPrice:      0,
+					Increment:       100,
+					Duration:        time.Minute,
+					CeilingPrice:    1000,
+					ExtendThreshold: 20 * time.Second,
+					ExtendBy:        30 * time.Second,
+				},
+			}); err != nil {
+				t.Fatalf("init auction: %v", err)
+			}
+
+			result, err := store.Cancel("auction-1", now)
+			if err == nil {
+				t.Fatal("expected terminal status to be rejected")
+			}
+			if result.Status != tt.status {
+				t.Fatalf("result status = %s, want %s", result.Status, tt.status)
+			}
+
+			snapshot, err := store.Snapshot("auction-1", "")
+			if err != nil {
+				t.Fatalf("snapshot: %v", err)
+			}
+			if snapshot.Status != tt.status {
+				t.Fatalf("stored status = %s, want %s", snapshot.Status, tt.status)
+			}
+		})
+	}
+}
+
 func TestStoreFinishExpiredRejectsTerminalStatuses(t *testing.T) {
 	now := time.Unix(200, 0)
 	tests := []struct {
