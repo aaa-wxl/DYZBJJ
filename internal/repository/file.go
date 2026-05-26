@@ -63,15 +63,25 @@ func NewFileRepository(dir string) (*FileRepository, error) {
 func (r *FileRepository) SaveUser(user auction.User) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.users[user.ID] = user
-	return r.save(usersFile, r.users)
+	users := cloneMap(r.users)
+	users[user.ID] = user
+	if err := r.save(usersFile, users); err != nil {
+		return err
+	}
+	r.users = users
+	return nil
 }
 
 func (r *FileRepository) SaveSession(session auction.Session) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.sessions[session.Token] = session
-	return r.save(sessionsFile, r.sessions)
+	sessions := cloneMap(r.sessions)
+	sessions[session.Token] = session
+	if err := r.save(sessionsFile, sessions); err != nil {
+		return err
+	}
+	r.sessions = sessions
+	return nil
 }
 
 func (r *FileRepository) GetUserByToken(token string) (auction.User, error) {
@@ -91,10 +101,12 @@ func (r *FileRepository) GetUserByToken(token string) (auction.User, error) {
 func (r *FileRepository) CreateAuction(a auction.Auction) (auction.Auction, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.auctions[a.ID] = a
-	if err := r.save(auctionsFile, r.auctions); err != nil {
+	auctions := cloneMap(r.auctions)
+	auctions[a.ID] = a
+	if err := r.save(auctionsFile, auctions); err != nil {
 		return auction.Auction{}, err
 	}
+	r.auctions = auctions
 	return a, nil
 }
 
@@ -104,8 +116,13 @@ func (r *FileRepository) UpdateAuction(a auction.Auction) error {
 	if _, ok := r.auctions[a.ID]; !ok {
 		return ErrNotFound
 	}
-	r.auctions[a.ID] = a
-	return r.save(auctionsFile, r.auctions)
+	auctions := cloneMap(r.auctions)
+	auctions[a.ID] = a
+	if err := r.save(auctionsFile, auctions); err != nil {
+		return err
+	}
+	r.auctions = auctions
+	return nil
 }
 
 func (r *FileRepository) GetAuction(id string) (auction.Auction, error) {
@@ -134,8 +151,13 @@ func (r *FileRepository) ListAuctions() ([]auction.Auction, error) {
 func (r *FileRepository) SaveBid(bid auction.Bid) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.bids[bid.AuctionID] = append(r.bids[bid.AuctionID], bid)
-	return r.save(bidsFile, r.bids)
+	bids := cloneBids(r.bids)
+	bids[bid.AuctionID] = append(bids[bid.AuctionID], bid)
+	if err := r.save(bidsFile, bids); err != nil {
+		return err
+	}
+	r.bids = bids
+	return nil
 }
 
 func (r *FileRepository) ListBids(auctionID string) ([]auction.Bid, error) {
@@ -153,10 +175,12 @@ func (r *FileRepository) UpsertOrder(order auction.Order) (auction.Order, error)
 	if existing, ok := r.orders[order.AuctionID]; ok {
 		return existing, nil
 	}
-	r.orders[order.AuctionID] = order
-	if err := r.save(ordersFile, r.orders); err != nil {
+	orders := cloneMap(r.orders)
+	orders[order.AuctionID] = order
+	if err := r.save(ordersFile, orders); err != nil {
 		return auction.Order{}, err
 	}
+	r.orders = orders
 	return order, nil
 }
 
@@ -190,9 +214,39 @@ func (r *FileRepository) save(name string, value any) error {
 		return err
 	}
 	path := filepath.Join(r.dir, name)
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+	tmp, err := os.CreateTemp(r.dir, name+"-*.tmp")
+	if err != nil {
 		return err
 	}
-	return os.Rename(tmp, path)
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		return err
+	}
+	return nil
+}
+
+func cloneMap[K comparable, V any](src map[K]V) map[K]V {
+	dst := make(map[K]V, len(src))
+	for key, value := range src {
+		dst[key] = value
+	}
+	return dst
+}
+
+func cloneBids(src map[string][]auction.Bid) map[string][]auction.Bid {
+	dst := make(map[string][]auction.Bid, len(src))
+	for key, bids := range src {
+		copied := make([]auction.Bid, len(bids))
+		copy(copied, bids)
+		dst[key] = copied
+	}
+	return dst
 }

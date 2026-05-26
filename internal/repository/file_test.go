@@ -2,6 +2,8 @@ package repository
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -164,5 +166,120 @@ func TestFileRepositoryGetUserByTokenRejectsExpiredSession(t *testing.T) {
 
 	if _, err := repo.GetUserByToken(session.Token); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("GetUserByToken(expired) error = %v, want %v", err, ErrNotFound)
+	}
+}
+
+func TestFileRepositoryUpdateAuctionPersistsAcrossInstances(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now().UTC().Round(0)
+
+	repo, err := NewFileRepository(dir)
+	if err != nil {
+		t.Fatalf("NewFileRepository() error = %v", err)
+	}
+
+	a := auction.Auction{
+		ID:         "auction-1",
+		MerchantID: "merchant-1",
+		Product: auction.Product{
+			Name:        "Camera",
+			ImageURL:    "https://example.test/camera.jpg",
+			Description: "Mirrorless camera",
+		},
+		Rules: auction.Rules{
+			StartPrice:      100,
+			Increment:       10,
+			Duration:        time.Hour,
+			CeilingPrice:    500,
+			ExtendThreshold: 5 * time.Minute,
+			ExtendBy:        time.Minute,
+		},
+		Status:       auction.StatusRunning,
+		CurrentPrice: 100,
+		StartsAt:     now,
+		EndsAt:       now.Add(time.Hour),
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}
+	if _, err := repo.CreateAuction(a); err != nil {
+		t.Fatalf("CreateAuction() error = %v", err)
+	}
+
+	updated := a
+	updated.Status = auction.StatusEnded
+	updated.CurrentPrice = 180
+	updated.UpdatedAt = now.Add(30 * time.Minute)
+	if err := repo.UpdateAuction(updated); err != nil {
+		t.Fatalf("UpdateAuction() error = %v", err)
+	}
+
+	reloaded, err := NewFileRepository(dir)
+	if err != nil {
+		t.Fatalf("NewFileRepository(reloaded) error = %v", err)
+	}
+	got, err := reloaded.GetAuction(a.ID)
+	if err != nil {
+		t.Fatalf("GetAuction() error = %v", err)
+	}
+	if got != updated {
+		t.Fatalf("GetAuction() = %+v, want %+v", got, updated)
+	}
+}
+
+func TestFileRepositorySaveBidPersistsMultipleBidsInOrder(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now().UTC().Round(0)
+
+	repo, err := NewFileRepository(dir)
+	if err != nil {
+		t.Fatalf("NewFileRepository() error = %v", err)
+	}
+
+	bids := []auction.Bid{
+		{ID: "bid-1", AuctionID: "auction-1", UserID: "user-1", RequestID: "request-1", Amount: 110, CreatedAt: now},
+		{ID: "bid-2", AuctionID: "auction-1", UserID: "user-2", RequestID: "request-2", Amount: 120, CreatedAt: now.Add(time.Minute)},
+		{ID: "bid-3", AuctionID: "auction-1", UserID: "user-3", RequestID: "request-3", Amount: 130, CreatedAt: now.Add(2 * time.Minute)},
+	}
+	for _, bid := range bids {
+		if err := repo.SaveBid(bid); err != nil {
+			t.Fatalf("SaveBid(%s) error = %v", bid.ID, err)
+		}
+	}
+
+	reloaded, err := NewFileRepository(dir)
+	if err != nil {
+		t.Fatalf("NewFileRepository(reloaded) error = %v", err)
+	}
+	got, err := reloaded.ListBids("auction-1")
+	if err != nil {
+		t.Fatalf("ListBids() error = %v", err)
+	}
+	if len(got) != len(bids) {
+		t.Fatalf("ListBids() len = %d, want %d: %+v", len(got), len(bids), got)
+	}
+	for i := range bids {
+		if got[i] != bids[i] {
+			t.Fatalf("ListBids()[%d] = %+v, want %+v", i, got[i], bids[i])
+		}
+	}
+}
+
+func TestFileRepositoryFailedAuctionWriteDoesNotCommitToMemory(t *testing.T) {
+	dir := t.TempDir()
+	repo, err := NewFileRepository(dir)
+	if err != nil {
+		t.Fatalf("NewFileRepository() error = %v", err)
+	}
+
+	if err := os.Mkdir(filepath.Join(dir, auctionsFile), 0o755); err != nil {
+		t.Fatalf("Mkdir(%s) error = %v", auctionsFile, err)
+	}
+
+	a := auction.Auction{ID: "auction-1", MerchantID: "merchant-1"}
+	if _, err := repo.CreateAuction(a); err == nil {
+		t.Fatal("CreateAuction() error = nil, want write failure")
+	}
+	if _, err := repo.GetAuction(a.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("GetAuction() error = %v, want %v", err, ErrNotFound)
 	}
 }
