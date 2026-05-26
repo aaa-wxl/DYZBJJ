@@ -1,4 +1,3 @@
-// auction 定义竞拍领域模型、状态机和规则校验。
 package auction
 
 import (
@@ -12,18 +11,14 @@ type Status string
 
 const (
 	// StatusDraft 表示竞拍已创建但尚未开始。
-	StatusDraft     Status = "DRAFT"
-	// StatusScheduled 表示竞拍已排期，后续可按计划启动。
-	StatusScheduled Status = "SCHEDULED"
+	StatusDraft Status = "DRAFT"
 	// StatusRunning 表示竞拍正在接受出价。
-	StatusRunning   Status = "RUNNING"
-	// StatusExtended 表示竞拍因临近结束出价被自动延时。
-	StatusExtended  Status = "EXTENDED"
+	StatusRunning Status = "RUNNING"
 	// StatusSold 表示竞拍已成交。
-	StatusSold      Status = "SOLD"
+	StatusSold Status = "SOLD"
 	// StatusEnded 表示竞拍自然结束但没有成交。
-	StatusEnded     Status = "ENDED"
-	// StatusCancelled 表示竞拍被商家异常取消。
+	StatusEnded Status = "ENDED"
+	// StatusCancelled 表示竞拍已取消。
 	StatusCancelled Status = "CANCELLED"
 )
 
@@ -38,7 +33,7 @@ type Product struct {
 	Description string `json:"description"`
 }
 
-// Rules 描述竞拍规则，金额统一使用整数分或演示用整数单位。
+// Rules 描述竞拍规则，金额使用整数单位。
 type Rules struct {
 	StartPrice      int64         `json:"startPrice"`
 	Increment       int64         `json:"increment"`
@@ -48,7 +43,7 @@ type Rules struct {
 	ExtendBy        time.Duration `json:"extendBy"`
 }
 
-// Validate 校验竞拍规则是否满足创建和启动的最低约束。
+// Validate 校验竞拍规则是否满足创建和启动约束。
 func (r Rules) Validate() error {
 	var problems []string
 	if r.StartPrice < 0 {
@@ -75,7 +70,7 @@ func (r Rules) Validate() error {
 	return nil
 }
 
-// Auction 是数据库侧的竞拍聚合根。
+// Auction 是竞拍聚合根。
 type Auction struct {
 	ID            string    `json:"id"`
 	MerchantID    string    `json:"merchantId"`
@@ -106,7 +101,7 @@ type Snapshot struct {
 	NextMinimumBid int64     `json:"nextMinimumBid"`
 }
 
-// Bid 记录一笔已被接受的出价流水。
+// Bid 记录一笔已接受的出价流水。
 type Bid struct {
 	ID        string    `json:"id"`
 	AuctionID string    `json:"auctionId"`
@@ -116,7 +111,7 @@ type Bid struct {
 	CreatedAt time.Time `json:"createdAt"`
 }
 
-// Order 是竞拍成交后生成的最小订单记录。
+// Order 是竞拍成交后生成的订单记录。
 type Order struct {
 	ID          string    `json:"id"`
 	AuctionID   string    `json:"auctionId"`
@@ -142,7 +137,7 @@ func NewAuction(merchantID string, product Product, rules Rules) Auction {
 	}
 }
 
-// ValidateForCreate 校验创建竞拍时必须具备的商家、商品和规则信息。
+// ValidateForCreate 校验创建竞拍所需的商家、商品和规则信息。
 func (a *Auction) ValidateForCreate() error {
 	if strings.TrimSpace(a.MerchantID) == "" {
 		return fmt.Errorf("%w: merchant id is required", ErrInvalidRules)
@@ -153,12 +148,12 @@ func (a *Auction) ValidateForCreate() error {
 	return a.Rules.Validate()
 }
 
-// Start 将未开始竞拍切换为 RUNNING，并初始化当前价和结束时间。
+// Start 将 DRAFT 竞拍切换为 RUNNING。
 func (a *Auction) Start(now time.Time) error {
 	if err := a.ValidateForCreate(); err != nil {
 		return err
 	}
-	if a.Status != StatusDraft && a.Status != StatusScheduled {
+	if a.Status != StatusDraft {
 		return fmt.Errorf("%w: cannot start auction in %s", ErrInvalidTransition, a.Status)
 	}
 	a.Status = StatusRunning
@@ -169,10 +164,10 @@ func (a *Auction) Start(now time.Time) error {
 	return nil
 }
 
-// Cancel 只允许取消尚未结束的竞拍。
+// Cancel 只允许取消 DRAFT 或 RUNNING 竞拍。
 func (a *Auction) Cancel() error {
 	switch a.Status {
-	case StatusDraft, StatusScheduled, StatusRunning, StatusExtended:
+	case StatusDraft, StatusRunning:
 		a.Status = StatusCancelled
 		a.UpdatedAt = time.Now().UTC()
 		return nil
@@ -181,9 +176,9 @@ func (a *Auction) Cancel() error {
 	}
 }
 
-// Finish 根据是否存在最高出价人决定进入 SOLD 或 ENDED。
+// Finish 根据最高出价人决定进入 SOLD 或 ENDED。
 func (a *Auction) Finish(now time.Time) error {
-	if a.Status != StatusRunning && a.Status != StatusExtended {
+	if a.Status != StatusRunning {
 		return fmt.Errorf("%w: cannot finish auction in %s", ErrInvalidTransition, a.Status)
 	}
 	if now.Before(a.EndsAt) {
@@ -199,7 +194,7 @@ func (a *Auction) Finish(now time.Time) error {
 	return nil
 }
 
-// ToSnapshot 将数据库竞拍聚合转换为实时房间快照。
+// ToSnapshot 将竞拍聚合转换为实时房间快照。
 func (a Auction) ToSnapshot(now time.Time) Snapshot {
 	return Snapshot{
 		AuctionID:      a.ID,
@@ -214,9 +209,9 @@ func (a Auction) ToSnapshot(now time.Time) Snapshot {
 	}
 }
 
-// IsOpenForBid 判断当前状态是否允许用户继续出价。
+// IsOpenForBid 判断当前状态是否允许继续出价。
 func IsOpenForBid(status Status) bool {
-	return status == StatusRunning || status == StatusExtended
+	return status == StatusRunning
 }
 
 // NextMinimumBid 计算下一次最低有效出价。
@@ -228,7 +223,7 @@ func NextMinimumBid(current int64, rules Rules) int64 {
 	return next
 }
 
-// NewID 生成演示用唯一 ID；生产环境应替换为稳定 ID 生成器。
+// NewID 生成演示用唯一 ID。
 func NewID(prefix string) string {
 	return fmt.Sprintf("%s-%d", prefix, time.Now().UTC().UnixNano())
 }
