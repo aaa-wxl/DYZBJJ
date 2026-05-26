@@ -12,14 +12,14 @@
 - **THEN** 系统 MUST 拒绝创建竞拍，并返回明确的校验错误
 
 ### Requirement: 商家可以启动竞拍
-系统 MUST 允许商家启动处于 `DRAFT` 或 `SCHEDULED` 状态的竞拍，并初始化实时竞拍状态。
+系统 MUST 允许商家启动处于 `DRAFT` 状态的竞拍，并初始化实时竞拍状态。
 
 #### Scenario: 启动竞拍成功
 - **WHEN** 商家启动一个规则完整且未开始的竞拍
 - **THEN** 系统 MUST 将竞拍状态变更为 `RUNNING`，初始化当前价、结束时间和 Redis 热点状态
 
 #### Scenario: 拒绝重复启动
-- **WHEN** 商家尝试启动已经处于 `RUNNING`、`EXTENDED`、`SOLD`、`ENDED` 或 `CANCELLED` 状态的竞拍
+- **WHEN** 商家尝试启动已经处于 `RUNNING`、`SOLD`、`ENDED` 或 `CANCELLED` 状态的竞拍
 - **THEN** 系统 MUST 拒绝启动请求，并保持原状态不变
 
 ### Requirement: 系统维护竞拍状态机
@@ -27,7 +27,7 @@
 
 #### Scenario: 自动延时触发
 - **WHEN** `RUNNING` 状态竞拍在结束前的延时窗口内收到有效出价，且未达到封顶价
-- **THEN** 系统 MUST 将竞拍结束时间延后，并将状态保持为 `RUNNING` 或变更为 `EXTENDED`
+- **THEN** 系统 MUST 在 `RUNNING` 状态下更新 `endsAt`，并广播延时事件
 
 #### Scenario: 封顶价触发成交
 - **WHEN** 有效出价达到或超过竞拍封顶价
@@ -41,7 +41,7 @@
 系统 MUST 允许商家取消尚未结束的异常竞拍。
 
 #### Scenario: 取消运行中竞拍
-- **WHEN** 商家取消处于 `DRAFT`、`SCHEDULED`、`RUNNING` 或 `EXTENDED` 状态的竞拍
+- **WHEN** 商家取消处于 `DRAFT` 或 `RUNNING` 状态的竞拍
 - **THEN** 系统 MUST 将竞拍状态变更为 `CANCELLED`，并广播竞拍取消事件
 
 #### Scenario: 拒绝取消已结束竞拍
