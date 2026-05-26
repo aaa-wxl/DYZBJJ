@@ -136,6 +136,49 @@ func TestStoreCeilingPriceWinsOverExtension(t *testing.T) {
 	}
 }
 
+func TestStorePlaceBidExtensionKeepsAuctionRunning(t *testing.T) {
+	store := NewMemoryStore()
+	now := time.Unix(150, 0)
+	endsAt := now.Add(5 * time.Second)
+	if err := store.InitAuction(auction.Snapshot{
+		AuctionID:    "auction-1",
+		Status:       auction.StatusRunning,
+		CurrentPrice: 0,
+		EndsAt:       endsAt,
+		Rules: auction.Rules{
+			StartPrice:      0,
+			Increment:       100,
+			Duration:        time.Minute,
+			CeilingPrice:    1000,
+			ExtendThreshold: 20 * time.Second,
+			ExtendBy:        30 * time.Second,
+		},
+	}); err != nil {
+		t.Fatalf("init auction: %v", err)
+	}
+
+	result, err := store.PlaceBid(BidCommand{
+		AuctionID: "auction-1",
+		UserID:    "user-1",
+		RequestID: "req-extend",
+		Amount:    100,
+		Now:       now,
+	})
+	if err != nil {
+		t.Fatalf("place bid: %v", err)
+	}
+
+	if !result.Extended {
+		t.Fatal("expected bid to extend auction")
+	}
+	if result.Snapshot.Status != auction.StatusRunning {
+		t.Fatalf("status = %s, want %s", result.Snapshot.Status, auction.StatusRunning)
+	}
+	if !result.Snapshot.EndsAt.Equal(endsAt.Add(30 * time.Second)) {
+		t.Fatalf("ends at = %s, want %s", result.Snapshot.EndsAt, endsAt.Add(30*time.Second))
+	}
+}
+
 func newStartedStore(t *testing.T) *MemoryStore {
 	t.Helper()
 	store := NewMemoryStore()

@@ -1,4 +1,4 @@
-export type AuctionStatus = "DRAFT" | "SCHEDULED" | "RUNNING" | "EXTENDED" | "SOLD" | "ENDED" | "CANCELLED";
+export type AuctionStatus = "DRAFT" | "RUNNING" | "SOLD" | "ENDED" | "CANCELLED";
 
 // Auction 对应后端竞拍聚合的前端展示模型。
 export type Auction = {

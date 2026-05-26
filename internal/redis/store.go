@@ -128,7 +128,6 @@ func (s *MemoryStore) PlaceBid(command BidCommand) (BidResult, error) {
 		snapshot.Status = auction.StatusSold
 	} else if snapshot.EndsAt.Sub(command.Now) <= snapshot.Rules.ExtendThreshold && snapshot.Rules.ExtendBy > 0 {
 		// 临近结束窗口内的有效出价触发自动延时。
-		snapshot.Status = auction.StatusExtended
 		snapshot.EndsAt = snapshot.EndsAt.Add(snapshot.Rules.ExtendBy)
 		extended = true
 	}
@@ -168,7 +167,7 @@ func (s *MemoryStore) Cancel(auctionID string, now time.Time) (auction.Snapshot,
 		return auction.Snapshot{}, ErrAuctionNotFound
 	}
 	switch snapshot.Status {
-	case auction.StatusDraft, auction.StatusScheduled, auction.StatusRunning, auction.StatusExtended:
+	case auction.StatusDraft, auction.StatusRunning:
 		snapshot.Status = auction.StatusCancelled
 		snapshot.ServerTime = now.UTC()
 		s.snapshots[auctionID] = snapshot
