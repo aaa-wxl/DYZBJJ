@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -25,13 +26,14 @@ const (
 type Role string
 
 const (
-	RoleAdmin  Role = "ADMIN"
-	RoleBidder Role = "BIDDER"
+	RoleAdmin  Role = "admin"
+	RoleBidder Role = "bidder"
 )
 
 var (
 	ErrInvalidRules      = errors.New("invalid auction rules")
 	ErrInvalidTransition = errors.New("invalid auction state transition")
+	idCounter            uint64
 )
 
 type User struct {
@@ -246,5 +248,6 @@ func NextMinimumBid(current int64, rules Rules) int64 {
 
 // NewID 生成演示用唯一 ID。
 func NewID(prefix string) string {
-	return fmt.Sprintf("%s-%d", prefix, time.Now().UTC().UnixNano())
+	seq := atomic.AddUint64(&idCounter, 1)
+	return fmt.Sprintf("%s-%d-%d", prefix, time.Now().UTC().UnixNano(), seq)
 }

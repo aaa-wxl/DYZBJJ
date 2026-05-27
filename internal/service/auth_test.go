@@ -47,6 +47,28 @@ func TestAuthRequireRejectsWrongRole(t *testing.T) {
 	}
 }
 
+func TestAuthKeepsSeparateUsersForFastLogins(t *testing.T) {
+	auth := NewAuthService(repository.NewMemoryRepository())
+	admin, err := auth.Login("admin", auction.RoleAdmin)
+	if err != nil {
+		t.Fatalf("admin login: %v", err)
+	}
+	bidder, err := auth.Login("bidder", auction.RoleBidder)
+	if err != nil {
+		t.Fatalf("bidder login: %v", err)
+	}
+	if admin.User.ID == bidder.User.ID {
+		t.Fatalf("users share id %q", admin.User.ID)
+	}
+	user, err := auth.Require(admin.Token, auction.RoleAdmin)
+	if err != nil {
+		t.Fatalf("require admin: %v", err)
+	}
+	if user.Role != auction.RoleAdmin {
+		t.Fatalf("admin token resolved to role %s", user.Role)
+	}
+}
+
 func TestAuthLoginRejectsEmptyName(t *testing.T) {
 	auth := NewAuthService(repository.NewMemoryRepository())
 

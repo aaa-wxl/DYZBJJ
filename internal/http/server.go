@@ -1,4 +1,3 @@
-// http 提供竞拍系统的 REST API、SSE 和最小 WebSocket 入口。
 package http
 
 import (
@@ -20,37 +19,55 @@ import (
 )
 
 type Server struct {
-	service *service.AuctionService
+	auction *service.AuctionService
+	auth    *service.AuthService
 	mux     *nethttp.ServeMux
 }
 
-// NewServer 注册所有本地演示需要的 HTTP 路由。
-func NewServer(service *service.AuctionService) *Server {
-	s := &Server{service: service, mux: nethttp.NewServeMux()}
+func NewServer(auctionService *service.AuctionService, authService *service.AuthService) *Server {
+	s := &Server{auction: auctionService, auth: authService, mux: nethttp.NewServeMux()}
 	s.routes()
 	return s
 }
 
-// Handler 返回带基础 CORS 支持的 HTTP handler。
 func (s *Server) Handler() nethttp.Handler {
 	return cors(s.mux)
 }
 
-// routes 将管理端、用户端和实时通信接口集中注册到 ServeMux。
 func (s *Server) routes() {
 	s.mux.HandleFunc("GET /healthz", func(w nethttp.ResponseWriter, r *nethttp.Request) {
 		writeJSON(w, nethttp.StatusOK, map[string]string{"status": "ok"})
 	})
+	s.mux.HandleFunc("POST /api/login", s.login)
+	s.mux.HandleFunc("GET /api/admin/auctions", s.adminListAuctions)
+	s.mux.HandleFunc("POST /api/admin/auctions", s.adminCreateAuction)
+	s.mux.HandleFunc("POST /api/admin/auctions/{id}/start", s.adminStartAuction)
+	s.mux.HandleFunc("POST /api/admin/auctions/{id}/cancel", s.adminCancelAuction)
 	s.mux.HandleFunc("GET /api/auctions", s.listAuctions)
-	s.mux.HandleFunc("POST /api/auctions", s.createAuction)
-	s.mux.HandleFunc("POST /api/auctions/{id}/start", s.startAuction)
-	s.mux.HandleFunc("POST /api/auctions/{id}/cancel", s.cancelAuction)
 	s.mux.HandleFunc("GET /api/auctions/{id}/snapshot", s.snapshot)
 	s.mux.HandleFunc("POST /api/auctions/{id}/bids", s.placeBid)
-	s.mux.HandleFunc("POST /api/auctions/{id}/finish", s.finishAuction)
 	s.mux.HandleFunc("GET /api/auctions/{id}/result", s.result)
 	s.mux.HandleFunc("GET /api/auctions/{id}/events", s.events)
 	s.mux.HandleFunc("GET /ws/auctions/{id}", s.websocketEvents)
+}
+
+type loginRequest struct {
+	Name string       `json:"name"`
+	Role auction.Role `json:"role"`
+}
+
+func (s *Server) login(w nethttp.ResponseWriter, r *nethttp.Request) {
+	var req loginRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeAPIError(w, nethttp.StatusBadRequest, "BAD_REQUEST", "请求体格式错误", nil)
+		return
+	}
+	session, err := s.auth.Login(req.Name, req.Role)
+	if err != nil {
+		writeAuthError(w, err)
+		return
+	}
+	writeJSON(w, nethttp.StatusOK, session)
 }
 
 type createAuctionRequest struct {
@@ -66,23 +83,39 @@ type createAuctionRequest struct {
 	ExtendBy        int64  `json:"extendBySeconds"`
 }
 
+func (s *Server) adminListAuctions(w nethttp.ResponseWriter, r *nethttp.Request) {
+	if _, ok := s.require(w, r, auction.RoleAdmin); !ok {
+		return
+	}
+	s.writeAuctionList(w)
+}
+
 func (s *Server) listAuctions(w nethttp.ResponseWriter, r *nethttp.Request) {
-	items, err := s.service.ListAuctions()
+	if _, ok := s.require(w, r, auction.RoleBidder); !ok {
+		return
+	}
+	s.writeAuctionList(w)
+}
+
+func (s *Server) writeAuctionList(w nethttp.ResponseWriter) {
+	items, err := s.auction.ListAuctions()
 	if err != nil {
-		writeError(w, nethttp.StatusInternalServerError, err)
+		writeAPIError(w, nethttp.StatusInternalServerError, "INTERNAL_ERROR", "竞拍列表读取失败", nil)
 		return
 	}
 	writeJSON(w, nethttp.StatusOK, items)
 }
 
-// createAuction 处理商家创建竞拍请求。
-func (s *Server) createAuction(w nethttp.ResponseWriter, r *nethttp.Request) {
-	var req createAuctionRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, nethttp.StatusBadRequest, err)
+func (s *Server) adminCreateAuction(w nethttp.ResponseWriter, r *nethttp.Request) {
+	if _, ok := s.require(w, r, auction.RoleAdmin); !ok {
 		return
 	}
-	a, err := s.service.CreateAuction(req.MerchantID, auction.Product{
+	var req createAuctionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeAPIError(w, nethttp.StatusBadRequest, "BAD_REQUEST", "请求体格式错误", nil)
+		return
+	}
+	a, err := s.auction.CreateAuction(req.MerchantID, auction.Product{
 		Name:        req.ProductName,
 		ImageURL:    req.ImageURL,
 		Description: req.Description,
@@ -95,117 +128,112 @@ func (s *Server) createAuction(w nethttp.ResponseWriter, r *nethttp.Request) {
 		ExtendBy:        time.Duration(req.ExtendBy) * time.Second,
 	})
 	if err != nil {
-		writeError(w, nethttp.StatusBadRequest, err)
+		writeAPIError(w, nethttp.StatusBadRequest, "INVALID_RULES", "竞拍规则不合法", nil)
 		return
 	}
 	writeJSON(w, nethttp.StatusCreated, a)
 }
 
-// startAuction 将 DRAFT 竞拍启动为 RUNNING。
-func (s *Server) startAuction(w nethttp.ResponseWriter, r *nethttp.Request) {
-	snapshot, err := s.service.StartAuction(r.PathValue("id"), time.Now().UTC())
+func (s *Server) adminStartAuction(w nethttp.ResponseWriter, r *nethttp.Request) {
+	if _, ok := s.require(w, r, auction.RoleAdmin); !ok {
+		return
+	}
+	snapshot, err := s.auction.StartAuction(r.PathValue("id"), time.Now().UTC())
 	if err != nil {
-		writeError(w, nethttp.StatusBadRequest, err)
+		writeAPIError(w, nethttp.StatusBadRequest, "INVALID_STATE", "当前竞拍不能启动", nil)
 		return
 	}
 	writeJSON(w, nethttp.StatusOK, snapshot)
 }
 
-// cancelAuction 处理商家异常取消竞拍。
-func (s *Server) cancelAuction(w nethttp.ResponseWriter, r *nethttp.Request) {
-	snapshot, err := s.service.CancelAuction(r.PathValue("id"), time.Now().UTC())
+func (s *Server) adminCancelAuction(w nethttp.ResponseWriter, r *nethttp.Request) {
+	if _, ok := s.require(w, r, auction.RoleAdmin); !ok {
+		return
+	}
+	snapshot, err := s.auction.CancelAuction(r.PathValue("id"), time.Now().UTC())
 	if err != nil {
-		writeError(w, nethttp.StatusBadRequest, err)
+		writeAPIError(w, nethttp.StatusBadRequest, "INVALID_STATE", "当前竞拍不能取消", nil)
 		return
 	}
 	writeJSON(w, nethttp.StatusOK, snapshot)
 }
 
-// snapshot 返回用户进入房间或重连后的竞拍快照。
 func (s *Server) snapshot(w nethttp.ResponseWriter, r *nethttp.Request) {
-	userID := r.URL.Query().Get("userId")
-	snapshot, err := s.service.Snapshot(r.PathValue("id"), userID)
+	user, ok := s.require(w, r, auction.RoleBidder)
+	if !ok {
+		return
+	}
+	snapshot, err := s.auction.Snapshot(r.PathValue("id"), user.ID)
 	if err != nil {
-		status := nethttp.StatusNotFound
-		if !errors.Is(err, redis.ErrAuctionNotFound) {
-			status = nethttp.StatusBadRequest
-		}
-		writeError(w, status, err)
+		writeAuctionLookupError(w, err)
 		return
 	}
 	writeJSON(w, nethttp.StatusOK, snapshot)
 }
 
 type bidRequest struct {
-	UserID    string `json:"userId"`
 	RequestID string `json:"requestId"`
 	Amount    int64  `json:"amount"`
 }
 
 func (s *Server) placeBid(w nethttp.ResponseWriter, r *nethttp.Request) {
-	var req bidRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, nethttp.StatusBadRequest, err)
+	user, ok := s.require(w, r, auction.RoleBidder)
+	if !ok {
 		return
 	}
-	result, err := s.service.PlaceBid(redis.BidCommand{
+	var req bidRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeAPIError(w, nethttp.StatusBadRequest, "BAD_REQUEST", "请求体格式错误", nil)
+		return
+	}
+	result, err := s.auction.PlaceBid(redis.BidCommand{
 		AuctionID: r.PathValue("id"),
-		UserID:    req.UserID,
+		UserID:    user.ID,
 		RequestID: req.RequestID,
 		Amount:    req.Amount,
 		Now:       time.Now().UTC(),
 	})
 	if err != nil {
-		writeJSON(w, nethttp.StatusBadRequest, map[string]any{
-			"error":       err.Error(),
-			"snapshot":    result.Snapshot,
-			"nextMinimum": result.NextMinimum,
-		})
+		writeBidError(w, err, result)
 		return
 	}
 	writeJSON(w, nethttp.StatusOK, result)
 }
 
-// finishAuction 用于演示或定时任务触发竞拍自然结束。
-func (s *Server) finishAuction(w nethttp.ResponseWriter, r *nethttp.Request) {
-	snapshot, err := s.service.FinishExpired(r.PathValue("id"), time.Now().UTC())
-	if err != nil {
-		writeError(w, nethttp.StatusBadRequest, err)
-		return
-	}
-	writeJSON(w, nethttp.StatusOK, snapshot)
-}
-
-// result 返回竞拍最终状态和订单摘要。
 func (s *Server) result(w nethttp.ResponseWriter, r *nethttp.Request) {
-	result, err := s.service.GetResult(r.PathValue("id"))
+	if _, ok := s.requireAny(w, r); !ok {
+		return
+	}
+	result, err := s.auction.GetResult(r.PathValue("id"))
 	if err != nil {
-		status := nethttp.StatusInternalServerError
 		if errors.Is(err, repository.ErrNotFound) {
-			status = nethttp.StatusNotFound
+			writeAPIError(w, nethttp.StatusNotFound, "AUCTION_NOT_FOUND", "竞拍不存在", nil)
+			return
 		}
-		writeError(w, status, err)
+		writeAPIError(w, nethttp.StatusInternalServerError, "INTERNAL_ERROR", "竞拍结果读取失败", nil)
 		return
 	}
 	writeJSON(w, nethttp.StatusOK, result)
 }
 
-// events 提供 SSE 兜底事件流，便于浏览器和调试工具直接订阅。
 func (s *Server) events(w nethttp.ResponseWriter, r *nethttp.Request) {
+	user, ok := s.require(w, r, auction.RoleBidder)
+	if !ok {
+		return
+	}
 	auctionID := r.PathValue("id")
-	userID := r.URL.Query().Get("userId")
 	flusher, ok := w.(nethttp.Flusher)
 	if !ok {
-		writeError(w, nethttp.StatusInternalServerError, fmt.Errorf("streaming unsupported"))
+		writeAPIError(w, nethttp.StatusInternalServerError, "STREAM_UNSUPPORTED", "当前服务不支持事件流", nil)
 		return
 	}
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 
-	ch, cancel := s.service.Subscribe(auctionID)
+	ch, cancel := s.auction.Subscribe(auctionID)
 	defer cancel()
-	if snapshot, err := s.service.Snapshot(auctionID, userID); err == nil {
+	if snapshot, err := s.auction.Snapshot(auctionID, user.ID); err == nil {
 		writeSSE(w, "snapshot", snapshot)
 		flusher.Flush()
 	}
@@ -220,16 +248,20 @@ func (s *Server) events(w nethttp.ResponseWriter, r *nethttp.Request) {
 	}
 }
 
-// websocketEvents 提供最小 WebSocket 推送，仅负责服务端向客户端发送房间事件。
 func (s *Server) websocketEvents(w nethttp.ResponseWriter, r *nethttp.Request) {
+	user, err := s.auth.Require(r.URL.Query().Get("token"), auction.RoleBidder)
+	if err != nil {
+		writeAuthError(w, err)
+		return
+	}
 	key := r.Header.Get("Sec-WebSocket-Key")
 	if key == "" {
-		writeError(w, nethttp.StatusBadRequest, fmt.Errorf("missing Sec-WebSocket-Key"))
+		writeAPIError(w, nethttp.StatusBadRequest, "BAD_REQUEST", "缺少 WebSocket 握手信息", nil)
 		return
 	}
 	hijacker, ok := w.(nethttp.Hijacker)
 	if !ok {
-		writeError(w, nethttp.StatusInternalServerError, fmt.Errorf("websocket hijack unsupported"))
+		writeAPIError(w, nethttp.StatusInternalServerError, "WEBSOCKET_UNSUPPORTED", "当前服务不支持 WebSocket", nil)
 		return
 	}
 	conn, rw, err := hijacker.Hijack()
@@ -246,10 +278,9 @@ func (s *Server) websocketEvents(w nethttp.ResponseWriter, r *nethttp.Request) {
 	_ = rw.Flush()
 
 	auctionID := r.PathValue("id")
-	userID := r.URL.Query().Get("userId")
-	ch, cancel := s.service.Subscribe(auctionID)
+	ch, cancel := s.auction.Subscribe(auctionID)
 	defer cancel()
-	if snapshot, err := s.service.Snapshot(auctionID, userID); err == nil {
+	if snapshot, err := s.auction.Snapshot(auctionID, user.ID); err == nil {
 		if err := writeWebSocketJSON(conn, map[string]any{"type": "snapshot", "snapshot": snapshot}); err != nil {
 			return
 		}
@@ -266,19 +297,78 @@ func (s *Server) websocketEvents(w nethttp.ResponseWriter, r *nethttp.Request) {
 	}
 }
 
+func (s *Server) require(w nethttp.ResponseWriter, r *nethttp.Request, role auction.Role) (auction.User, bool) {
+	user, err := s.auth.Require(bearerToken(r), role)
+	if err != nil {
+		writeAuthError(w, err)
+		return auction.User{}, false
+	}
+	return user, true
+}
+
+func (s *Server) requireAny(w nethttp.ResponseWriter, r *nethttp.Request) (auction.User, bool) {
+	user, err := s.auth.Require(bearerToken(r), auction.RoleBidder)
+	if err == nil {
+		return user, true
+	}
+	user, err = s.auth.Require(bearerToken(r), auction.RoleAdmin)
+	if err == nil {
+		return user, true
+	}
+	writeAuthError(w, service.ErrUnauthorized)
+	return auction.User{}, false
+}
+
+func bearerToken(r *nethttp.Request) string {
+	value := r.Header.Get("Authorization")
+	if strings.HasPrefix(value, "Bearer ") {
+		return strings.TrimSpace(strings.TrimPrefix(value, "Bearer "))
+	}
+	return ""
+}
+
+func writeAuthError(w nethttp.ResponseWriter, err error) {
+	if errors.Is(err, service.ErrForbidden) {
+		writeAPIError(w, nethttp.StatusForbidden, "FORBIDDEN", "当前用户无权执行该操作", nil)
+		return
+	}
+	writeAPIError(w, nethttp.StatusUnauthorized, "UNAUTHORIZED", "请先登录", nil)
+}
+
+func writeAuctionLookupError(w nethttp.ResponseWriter, err error) {
+	if errors.Is(err, redis.ErrAuctionNotFound) || errors.Is(err, repository.ErrNotFound) {
+		writeAPIError(w, nethttp.StatusNotFound, "AUCTION_NOT_FOUND", "竞拍不存在", nil)
+		return
+	}
+	writeAPIError(w, nethttp.StatusBadRequest, "INVALID_STATE", "竞拍状态不可用", nil)
+}
+
+func writeBidError(w nethttp.ResponseWriter, err error, result redis.BidResult) {
+	details := map[string]any{"nextMinimumBid": result.NextMinimum}
+	message := err.Error()
+	switch {
+	case strings.Contains(message, "at least"):
+		writeAPIError(w, nethttp.StatusBadRequest, "BID_TOO_LOW", "出价低于最低有效价", details)
+	case strings.Contains(message, "increment"):
+		writeAPIError(w, nethttp.StatusBadRequest, "BID_STEP_INVALID", "出价不符合加价幅度", details)
+	case strings.Contains(message, "status") || strings.Contains(message, "ended"):
+		writeAPIError(w, nethttp.StatusBadRequest, "INVALID_STATE", "当前竞拍不允许出价", details)
+	default:
+		writeAPIError(w, nethttp.StatusBadRequest, "BID_REJECTED", "出价失败", details)
+	}
+}
+
 func writeSSE(w nethttp.ResponseWriter, event string, payload any) {
 	data, _ := json.Marshal(payload)
 	_, _ = fmt.Fprintf(w, "event: %s\n", strings.ReplaceAll(event, "\n", ""))
 	_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
 }
 
-// websocketAccept 计算 WebSocket 握手响应头。
 func websocketAccept(key string) string {
 	sum := sha1.Sum([]byte(key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"))
 	return base64.StdEncoding.EncodeToString(sum[:])
 }
 
-// writeWebSocketJSON 将事件编码为未分片文本帧。
 func writeWebSocketJSON(conn net.Conn, payload any) error {
 	data, err := json.Marshal(payload)
 	if err != nil {
@@ -287,7 +377,6 @@ func writeWebSocketJSON(conn net.Conn, payload any) error {
 	return writeWebSocketText(conn, data)
 }
 
-// writeWebSocketText 写入服务端未掩码的 WebSocket 文本帧。
 func writeWebSocketText(w io.Writer, payload []byte) error {
 	header := []byte{0x81}
 	switch {
@@ -314,23 +403,24 @@ func writeWebSocketText(w io.Writer, payload []byte) error {
 	return err
 }
 
-// writeJSON 输出 JSON 响应。
 func writeJSON(w nethttp.ResponseWriter, status int, payload any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(payload)
 }
 
-// writeError 输出统一错误结构。
-func writeError(w nethttp.ResponseWriter, status int, err error) {
-	writeJSON(w, status, map[string]string{"error": err.Error()})
+func writeAPIError(w nethttp.ResponseWriter, status int, code, message string, details any) {
+	payload := map[string]any{"code": code, "message": message}
+	if details != nil {
+		payload["details"] = details
+	}
+	writeJSON(w, status, payload)
 }
 
-// cors 提供本地前后端分端口开发所需的基础跨域支持。
 func cors(next nethttp.Handler) nethttp.Handler {
 	return nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 		w.Header().Set("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
 		if r.Method == nethttp.MethodOptions {
 			w.WriteHeader(nethttp.StatusNoContent)

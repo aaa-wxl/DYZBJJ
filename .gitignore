@@ -11,3 +11,5 @@ web/test-results/
 .worktrees
 data/
 data
+.gocache/
+.gocache
