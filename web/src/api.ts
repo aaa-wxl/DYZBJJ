@@ -3,9 +3,12 @@ export type Role = "admin" | "bidder";
 
 export type User = {
   id: string;
-  name: string;
+  username: string;
+  displayName: string;
   role: Role;
-  createdAt: string;
+  status: "active" | "disabled";
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 export type LoginSession = {
@@ -43,6 +46,13 @@ export type Rules = {
   extendBy: number;
 };
 
+export type LeaderboardEntry = {
+  rank: number;
+  userId: string;
+  displayName: string;
+  amount: number;
+};
+
 export type Snapshot = {
   auctionId: string;
   product: Product;
@@ -55,6 +65,7 @@ export type Snapshot = {
   rank?: number;
   participants: number;
   nextMinimumBid: number;
+  leaderboard: LeaderboardEntry[];
 };
 
 export type BidResult = {
@@ -121,10 +132,10 @@ export class APIError extends Error {
 const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8080";
 const WS_BASE = API_BASE.replace(/^http/, "ws");
 
-export async function login(name: string, role: Role): Promise<LoginSession> {
+export async function login(username: string, password: string): Promise<LoginSession> {
   return request("/api/login", undefined, {
     method: "POST",
-    body: JSON.stringify({ name, role })
+    body: JSON.stringify({ username, password })
   });
 }
 
@@ -189,9 +200,7 @@ async function request<T>(path: string, token?: string, init: RequestInit = {}):
 
 async function readJSON(res: Response): Promise<unknown> {
   const text = await res.text();
-  if (!text) {
-    return {};
-  }
+  if (!text) return {};
   try {
     return JSON.parse(text);
   } catch {

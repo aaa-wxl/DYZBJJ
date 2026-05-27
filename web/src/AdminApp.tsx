@@ -9,6 +9,7 @@ import {
   type Auction,
   type AuctionEvent,
   type CreateAuctionPayload,
+  type LeaderboardEntry,
   type LoginSession,
   type Snapshot
 } from "./api";
@@ -103,7 +104,7 @@ export function AdminApp({ session, onLogout }: AdminAppProps) {
     await run("竞拍已启动", async () => {
       const next = await adminStartAuction(session.token, selected.id);
       applySnapshot(next);
-      appendLog(`${session.user.name} 开始了竞拍`);
+      appendLog(`${session.user.displayName} 开始了竞拍`);
     });
   }
 
@@ -112,7 +113,7 @@ export function AdminApp({ session, onLogout }: AdminAppProps) {
     await run("竞拍已取消", async () => {
       const next = await adminCancelAuction(session.token, selected.id);
       applySnapshot(next);
-      appendLog(`${session.user.name} 取消了竞拍`);
+      appendLog(`${session.user.displayName} 取消了竞拍`);
     });
   }
 
@@ -131,16 +132,14 @@ export function AdminApp({ session, onLogout }: AdminAppProps) {
   }
 
   function handleRealtimeEvent(event: AuctionEvent) {
-    if (event.snapshot) {
-      applySnapshot(event.snapshot);
-    }
+    if (event.snapshot) applySnapshot(event.snapshot);
     const text = eventText(event);
     if (text) appendLog(text);
   }
 
   function applySnapshot(next: Snapshot) {
     setSnapshot(next);
-    setAuctions((items) => items.map((item) => item.id === next.auctionId ? snapshotToAuction(item, next) : item));
+    setAuctions((items) => items.map((item) => (item.id === next.auctionId ? snapshotToAuction(item, next) : item)));
   }
 
   function appendLog(text: string) {
@@ -153,7 +152,7 @@ export function AdminApp({ session, onLogout }: AdminAppProps) {
         <div className="brand-block">
           <p className="eyebrow">Admin Console</p>
           <h1>竞拍管理</h1>
-          <span>{session.user.name}</span>
+          <span>{session.user.displayName}</span>
         </div>
         <button className="ghost-btn" onClick={onLogout}>退出</button>
         <div className="auction-stack">
@@ -199,7 +198,7 @@ export function AdminApp({ session, onLogout }: AdminAppProps) {
                   <p>{selected.product.description}</p>
                   <dl>
                     <div><dt>当前最高价</dt><dd>{currency(currentPrice)}</dd></div>
-                    <div><dt>最高出价人</dt><dd>{live?.highestBidder || selected.highestBidder || "-"}</dd></div>
+                    <div><dt>最高出价人</dt><dd>{live?.leaderboard?.[0]?.displayName || selected.highestBidder || "-"}</dd></div>
                     <div><dt>倒计时</dt><dd>{currentEndsAt ? countdown(currentEndsAt, now) : "-"}</dd></div>
                     <div><dt>参与人数</dt><dd>{live?.participants ?? "-"}</dd></div>
                   </dl>
@@ -213,6 +212,7 @@ export function AdminApp({ session, onLogout }: AdminAppProps) {
               <div className="empty-state">暂无竞拍</div>
             )}
             {message && <p className="notice-line">{message}</p>}
+            <Leaderboard items={live?.leaderboard ?? []} />
             <EventLog title="实时日志" logs={logs} />
           </section>
         </div>
@@ -223,6 +223,21 @@ export function AdminApp({ session, onLogout }: AdminAppProps) {
 
 function NumberField({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => void }) {
   return <label>{label}<input type="number" value={value} onChange={(event) => onChange(Number(event.target.value))} /></label>;
+}
+
+function Leaderboard({ items }: { items: LeaderboardEntry[] }) {
+  return (
+    <section className="leaderboard">
+      <h3>Top 5 排行榜</h3>
+      {items.length === 0 ? <p className="empty-log">暂无出价</p> : items.map((item) => (
+        <p key={item.userId}>
+          <span>#{item.rank}</span>
+          <strong>{item.displayName || item.userId}</strong>
+          <em>{currency(item.amount)}</em>
+        </p>
+      ))}
+    </section>
+  );
 }
 
 function EventLog({ title, logs }: { title: string; logs: LogItem[] }) {
@@ -239,14 +254,7 @@ function StatusPill({ status }: { status: Auction["status"] }) {
 }
 
 function snapshotToAuction(item: Auction, next: Snapshot): Auction {
-  return {
-    ...item,
-    status: next.status,
-    currentPrice: next.currentPrice,
-    highestBidder: next.highestBidder,
-    endsAt: next.endsAt,
-    updatedAt: next.serverTime
-  };
+  return { ...item, status: next.status, currentPrice: next.currentPrice, highestBidder: next.highestBidder, endsAt: next.endsAt, updatedAt: next.serverTime };
 }
 
 function eventText(event: AuctionEvent) {
@@ -260,7 +268,7 @@ function eventText(event: AuctionEvent) {
 }
 
 function currency(value: number) {
-  return `￥${value.toLocaleString("zh-CN")}`;
+  return `¥${value.toLocaleString("zh-CN")}`;
 }
 
 function countdown(endsAt: string, now: number) {

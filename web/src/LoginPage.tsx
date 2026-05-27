@@ -8,7 +8,8 @@ type LoginPageProps = {
 
 export function LoginPage({ defaultRole, onLogin }: LoginPageProps) {
   const [role, setRole] = useState<Role>(defaultRole);
-  const [name, setName] = useState(defaultRole === "admin" ? "管理员" : "用户A");
+  const [username, setUsername] = useState(defaultRole === "admin" ? "admin" : "userA");
+  const [password, setPassword] = useState(defaultRole === "admin" ? "admin123" : "123456");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const title = useMemo(() => (role === "admin" ? "管理端登录" : "用户端登录"), [role]);
@@ -18,7 +19,7 @@ export function LoginPage({ defaultRole, onLogin }: LoginPageProps) {
     setSubmitting(true);
     setError("");
     try {
-      onLogin(await login(name, role));
+      onLogin(await login(username, password));
     } catch (err) {
       setError(err instanceof Error ? err.message : "登录失败");
     } finally {
@@ -28,7 +29,8 @@ export function LoginPage({ defaultRole, onLogin }: LoginPageProps) {
 
   function switchRole(nextRole: Role) {
     setRole(nextRole);
-    setName(nextRole === "admin" ? "管理员" : "用户A");
+    setUsername(nextRole === "admin" ? "admin" : "userA");
+    setPassword(nextRole === "admin" ? "admin123" : "123456");
   }
 
   return (
@@ -38,7 +40,7 @@ export function LoginPage({ defaultRole, onLogin }: LoginPageProps) {
         <h1>登录</h1>
         <p className="login-subtitle">{title}</p>
         <form onSubmit={submit} className="login-form">
-          <div className="segmented" role="tablist" aria-label="登录身份">
+          <div className="segmented" role="tablist" aria-label="登录入口">
             <button type="button" className={role === "bidder" ? "active" : ""} onClick={() => switchRole("bidder")}>
               用户端
             </button>
@@ -47,11 +49,15 @@ export function LoginPage({ defaultRole, onLogin }: LoginPageProps) {
             </button>
           </div>
           <label>
-            昵称
-            <input value={name} onChange={(event) => setName(event.target.value)} placeholder="输入演示昵称" />
+            用户名
+            <input value={username} onChange={(event) => setUsername(event.target.value)} placeholder="admin / userA / userB / userC" />
+          </label>
+          <label>
+            密码
+            <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="输入密码" />
           </label>
           {error && <p className="error-line">{error}</p>}
-          <button className="primary-btn" disabled={submitting || !name.trim()}>
+          <button className="primary-btn" disabled={submitting || !username.trim() || !password.trim()}>
             {submitting ? "登录中" : "进入"}
           </button>
         </form>

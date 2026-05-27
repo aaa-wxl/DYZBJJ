@@ -147,6 +147,51 @@ p {
   color: var(--muted);
 }
 
+.leaderboard {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  padding: 12px;
+}
+
+.leaderboard h3 {
+  margin: 0 0 4px;
+  font-size: 16px;
+}
+
+.leaderboard p {
+  display: grid;
+  grid-template-columns: 42px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  border-radius: 6px;
+  background: #f5f1e8;
+  padding: 9px 10px;
+}
+
+.leaderboard p.mine {
+  outline: 2px solid var(--green);
+  background: #edf8f1;
+}
+
+.leaderboard span {
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.leaderboard strong,
+.leaderboard em {
+  font-style: normal;
+}
+
+.leaderboard em {
+  color: var(--green);
+  font-weight: 900;
+}
+
 .login-page {
   min-height: 100vh;
   display: flex;

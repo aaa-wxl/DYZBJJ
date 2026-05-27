@@ -8,6 +8,7 @@ import {
   placeBid,
   type Auction,
   type AuctionEvent,
+  type LeaderboardEntry,
   type LoginSession,
   type Snapshot
 } from "./api";
@@ -98,9 +99,7 @@ export function MobileApp({ session, onLogout }: MobileAppProps) {
   }
 
   function handleRealtimeEvent(event: AuctionEvent) {
-    if (event.snapshot) {
-      applySnapshot(event.snapshot);
-    }
+    if (event.snapshot) applySnapshot(event.snapshot);
     const text = eventText(event);
     if (text) appendLog(text);
   }
@@ -108,7 +107,7 @@ export function MobileApp({ session, onLogout }: MobileAppProps) {
   function applySnapshot(next: Snapshot) {
     setSnapshot(next);
     setBidAmount(next.nextMinimumBid);
-    setAuctions((items) => items.map((item) => item.id === next.auctionId ? snapshotToAuction(item, next) : item));
+    setAuctions((items) => items.map((item) => (item.id === next.auctionId ? snapshotToAuction(item, next) : item)));
     if (next.status === "SOLD") setMessage("已成交");
     if (next.status === "ENDED") setMessage("已结束");
   }
@@ -120,7 +119,7 @@ export function MobileApp({ session, onLogout }: MobileAppProps) {
     try {
       const result = await placeBid(session.token, selectedId, bidAmount);
       applySnapshot(result.snapshot);
-      appendLog(`${session.user.name} 出价 ${currency(result.snapshot.currentPrice)}`);
+      appendLog(`${session.user.displayName} 出价 ${currency(result.snapshot.currentPrice)}`);
       if (result.snapshot.status === "SOLD") {
         const finalResult = await getResult(session.token, selectedId);
         setMessage(finalResult.order ? `成交价 ${currency(finalResult.order.finalPrice)}` : "已成交");
@@ -145,7 +144,7 @@ export function MobileApp({ session, onLogout }: MobileAppProps) {
     <main className="mobile-shell">
       <header className="mobile-topbar">
         <div>
-          <p>{session.user.name}</p>
+          <p>{session.user.displayName}</p>
           <strong>{connection}</strong>
         </div>
         <button className="text-btn" onClick={onLogout}>退出</button>
@@ -183,6 +182,7 @@ export function MobileApp({ session, onLogout }: MobileAppProps) {
 
           <section className="mobile-log-wrap">
             {message && <p className="mobile-message">{message}</p>}
+            <Leaderboard items={snapshot?.leaderboard ?? []} currentUserId={session.user.id} />
             <EventLog logs={logs} />
           </section>
 
@@ -206,6 +206,21 @@ function Metric({ label, value }: { label: string; value: string }) {
   return <div><span>{label}</span><strong>{value}</strong></div>;
 }
 
+function Leaderboard({ items, currentUserId }: { items: LeaderboardEntry[]; currentUserId: string }) {
+  return (
+    <section className="leaderboard">
+      <h3>Top 5 排行榜</h3>
+      {items.length === 0 ? <p className="empty-log">暂无出价</p> : items.map((item) => (
+        <p key={item.userId} className={item.userId === currentUserId ? "mine" : ""}>
+          <span>#{item.rank}</span>
+          <strong>{item.displayName || item.userId}</strong>
+          <em>{currency(item.amount)}</em>
+        </p>
+      ))}
+    </section>
+  );
+}
+
 function EventLog({ logs }: { logs: LogItem[] }) {
   return (
     <section className="event-log mobile-event-log">
@@ -216,14 +231,7 @@ function EventLog({ logs }: { logs: LogItem[] }) {
 }
 
 function snapshotToAuction(item: Auction, next: Snapshot): Auction {
-  return {
-    ...item,
-    status: next.status,
-    currentPrice: next.currentPrice,
-    highestBidder: next.highestBidder,
-    endsAt: next.endsAt,
-    updatedAt: next.serverTime
-  };
+  return { ...item, status: next.status, currentPrice: next.currentPrice, highestBidder: next.highestBidder, endsAt: next.endsAt, updatedAt: next.serverTime };
 }
 
 function eventText(event: AuctionEvent) {
@@ -237,7 +245,7 @@ function eventText(event: AuctionEvent) {
 }
 
 function currency(value: number) {
-  return `￥${value.toLocaleString("zh-CN")}`;
+  return `¥${value.toLocaleString("zh-CN")}`;
 }
 
 function countdown(endsAt: string, now: number) {
