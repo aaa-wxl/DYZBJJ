@@ -16,6 +16,7 @@ import (
 	"realtime-auction-core/internal/redis"
 	"realtime-auction-core/internal/repository"
 	"realtime-auction-core/internal/service"
+	"realtime-auction-core/internal/ws"
 )
 
 type Server struct {
@@ -245,7 +246,7 @@ func (s *Server) events(w nethttp.ResponseWriter, r *nethttp.Request) {
 		case <-r.Context().Done():
 			return
 		case event := <-ch:
-			writeSSE(w, string(event.Type), event)
+			writeSSE(w, string(event.Type), s.personalizeEvent(event, user))
 			flusher.Flush()
 		}
 	}
@@ -292,11 +293,27 @@ func (s *Server) websocketEvents(w nethttp.ResponseWriter, r *nethttp.Request) {
 		case <-r.Context().Done():
 			return
 		case event := <-ch:
-			if err := writeWebSocketJSON(conn, event); err != nil {
+			if err := writeWebSocketJSON(conn, s.personalizeEvent(event, user)); err != nil {
 				return
 			}
 		}
 	}
+}
+
+func (s *Server) personalizeEvent(event ws.Event, user auction.User) ws.Event {
+	auctionID := event.AuctionID
+	if event.Snapshot.AuctionID != "" {
+		auctionID = event.Snapshot.AuctionID
+	}
+	if auctionID == "" {
+		return event
+	}
+	snapshot, err := s.auction.Snapshot(auctionID, user.ID)
+	if err != nil {
+		return event
+	}
+	event.Snapshot = snapshot
+	return event
 }
 
 func (s *Server) require(w nethttp.ResponseWriter, r *nethttp.Request, role auction.Role) (auction.User, bool) {
