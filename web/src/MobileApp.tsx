@@ -78,6 +78,10 @@ export function MobileApp({ session, onLogout }: MobileAppProps) {
       const running = items.find((item) => item.status === "RUNNING");
       setSelectedId((current) => current || running?.id || items[0]?.id || "");
     } catch (err) {
+      if (err instanceof APIError && err.code === "UNAUTHORIZED") {
+        onLogout();
+        return;
+      }
       setMessage(err instanceof Error ? err.message : "列表读取失败");
     }
   }
@@ -86,6 +90,10 @@ export function MobileApp({ session, onLogout }: MobileAppProps) {
     try {
       applySnapshot(await getSnapshot(session.token, id));
     } catch (err) {
+      if (err instanceof APIError && err.code === "UNAUTHORIZED") {
+        onLogout();
+        return;
+      }
       setMessage(err instanceof Error ? err.message : "状态恢复失败");
     }
   }
@@ -114,6 +122,10 @@ export function MobileApp({ session, onLogout }: MobileAppProps) {
         setMessage("出价成功");
       }
     } catch (err) {
+      if (err instanceof APIError && err.code === "UNAUTHORIZED") {
+        onLogout();
+        return;
+      }
       if (err instanceof APIError && err.details && typeof err.details === "object" && "nextMinimumBid" in err.details) {
         const next = Number((err.details as { nextMinimumBid: number }).nextMinimumBid);
         if (Number.isFinite(next)) setBidAmount(next);

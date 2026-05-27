@@ -4,6 +4,7 @@ import {
   adminCreateAuction,
   adminListAuctions,
   adminStartAuction,
+  APIError,
   type Auction,
   type CreateAuctionPayload,
   type LoginSession
@@ -40,9 +41,17 @@ export function AdminApp({ session, onLogout }: AdminAppProps) {
   }, []);
 
   async function refresh(preferredId = selectedId) {
-    const items = await adminListAuctions(session.token);
-    setAuctions(items);
-    setSelectedId(preferredId || items[0]?.id || "");
+    try {
+      const items = await adminListAuctions(session.token);
+      setAuctions(items);
+      setSelectedId(preferredId || items[0]?.id || "");
+    } catch (err) {
+      if (err instanceof APIError && err.code === "UNAUTHORIZED") {
+        onLogout();
+        return;
+      }
+      setMessage(err instanceof Error ? err.message : "列表读取失败");
+    }
   }
 
   async function submit(event: FormEvent) {
@@ -76,6 +85,10 @@ export function AdminApp({ session, onLogout }: AdminAppProps) {
       await action();
       setMessage(success);
     } catch (err) {
+      if (err instanceof APIError && err.code === "UNAUTHORIZED") {
+        onLogout();
+        return;
+      }
       setMessage(err instanceof Error ? err.message : "操作失败");
     } finally {
       setLoading(false);

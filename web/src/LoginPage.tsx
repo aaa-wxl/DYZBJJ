@@ -33,16 +33,10 @@ export function LoginPage({ defaultRole, onLogin }: LoginPageProps) {
 
   return (
     <main className="login-page">
-      <section className="login-visual" aria-hidden="true">
-        <div className="login-price">￥3,000</div>
-        <div className="login-lot">
-          <span>RUNNING</span>
-          <strong>星河翡翠手镯</strong>
-        </div>
-      </section>
       <section className="login-panel">
         <p className="eyebrow">Realtime Auction</p>
-        <h1>{title}</h1>
+        <h1>登录</h1>
+        <p className="login-subtitle">{title}</p>
         <form onSubmit={submit} className="login-form">
           <div className="segmented" role="tablist" aria-label="登录身份">
             <button type="button" className={role === "bidder" ? "active" : ""} onClick={() => switchRole("bidder")}>

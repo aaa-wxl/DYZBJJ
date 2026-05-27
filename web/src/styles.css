@@ -112,55 +112,33 @@ p {
 
 .login-page {
   min-height: 100vh;
-  display: grid;
-  grid-template-columns: minmax(360px, 1.05fr) minmax(340px, 0.7fr);
-  background:
-    linear-gradient(90deg, rgba(36, 38, 42, 0.92), rgba(36, 38, 42, 0.76)),
-    url("https://images.unsplash.com/photo-1617038260897-41a1f14a8ca0?auto=format&fit=crop&w=1500&q=80") center/cover;
-}
-
-.login-visual {
-  min-height: 100vh;
   display: flex;
-  align-items: end;
-  justify-content: space-between;
-  padding: 42px;
-  color: white;
-}
-
-.login-price {
-  font-size: clamp(48px, 8vw, 108px);
-  font-weight: 900;
-}
-
-.login-lot {
-  display: grid;
-  gap: 8px;
-  text-align: right;
-}
-
-.login-lot span {
-  color: #f0bf5b;
-  font-size: 12px;
-  font-weight: 900;
-}
-
-.login-lot strong {
-  font-size: 28px;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background:
+    linear-gradient(135deg, rgba(31, 138, 91, 0.10), transparent 36%),
+    linear-gradient(315deg, rgba(200, 139, 45, 0.16), transparent 42%),
+    var(--paper);
 }
 
 .login-panel {
-  align-self: center;
-  margin: 28px;
+  width: min(720px, 100%);
   border-radius: 8px;
   background: var(--paper);
   padding: 30px;
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.22);
+  box-shadow: 0 24px 80px rgba(36, 38, 42, 0.16);
 }
 
 .login-panel h1 {
-  margin-bottom: 22px;
+  margin-bottom: 6px;
   font-size: 34px;
+}
+
+.login-subtitle {
+  margin-bottom: 22px;
+  color: var(--muted);
+  font-weight: 700;
 }
 
 .login-form {
@@ -548,10 +526,6 @@ dd {
     grid-template-columns: 1fr;
   }
 
-  .login-visual {
-    min-height: 42vh;
-  }
-
   .admin-sidebar {
     min-height: auto;
   }
@@ -559,16 +533,11 @@ dd {
 
 @media (max-width: 560px) {
   .login-page {
-    display: block;
-  }
-
-  .login-visual {
-    min-height: 36vh;
-    padding: 22px;
+    padding: 0;
   }
 
   .login-panel {
-    margin: 0;
+    min-height: 100vh;
     border-radius: 0;
     box-shadow: none;
   }
