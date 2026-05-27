@@ -135,10 +135,11 @@ func (s *Server) adminCreateAuction(w nethttp.ResponseWriter, r *nethttp.Request
 }
 
 func (s *Server) adminStartAuction(w nethttp.ResponseWriter, r *nethttp.Request) {
-	if _, ok := s.require(w, r, auction.RoleAdmin); !ok {
+	user, ok := s.require(w, r, auction.RoleAdmin)
+	if !ok {
 		return
 	}
-	snapshot, err := s.auction.StartAuction(r.PathValue("id"), time.Now().UTC())
+	snapshot, err := s.auction.StartAuctionBy(r.PathValue("id"), time.Now().UTC(), user)
 	if err != nil {
 		writeAPIError(w, nethttp.StatusBadRequest, "INVALID_STATE", "当前竞拍不能启动", nil)
 		return
@@ -147,10 +148,11 @@ func (s *Server) adminStartAuction(w nethttp.ResponseWriter, r *nethttp.Request)
 }
 
 func (s *Server) adminCancelAuction(w nethttp.ResponseWriter, r *nethttp.Request) {
-	if _, ok := s.require(w, r, auction.RoleAdmin); !ok {
+	user, ok := s.require(w, r, auction.RoleAdmin)
+	if !ok {
 		return
 	}
-	snapshot, err := s.auction.CancelAuction(r.PathValue("id"), time.Now().UTC())
+	snapshot, err := s.auction.CancelAuctionBy(r.PathValue("id"), time.Now().UTC(), user)
 	if err != nil {
 		writeAPIError(w, nethttp.StatusBadRequest, "INVALID_STATE", "当前竞拍不能取消", nil)
 		return
@@ -189,6 +191,7 @@ func (s *Server) placeBid(w nethttp.ResponseWriter, r *nethttp.Request) {
 	result, err := s.auction.PlaceBid(redis.BidCommand{
 		AuctionID: r.PathValue("id"),
 		UserID:    user.ID,
+		UserName:  user.Name,
 		RequestID: req.RequestID,
 		Amount:    req.Amount,
 		Now:       time.Now().UTC(),
@@ -249,9 +252,8 @@ func (s *Server) events(w nethttp.ResponseWriter, r *nethttp.Request) {
 }
 
 func (s *Server) websocketEvents(w nethttp.ResponseWriter, r *nethttp.Request) {
-	user, err := s.auth.Require(r.URL.Query().Get("token"), auction.RoleBidder)
-	if err != nil {
-		writeAuthError(w, err)
+	user, ok := s.requireAnyToken(w, r.URL.Query().Get("token"))
+	if !ok {
 		return
 	}
 	key := r.Header.Get("Sec-WebSocket-Key")
@@ -307,11 +309,15 @@ func (s *Server) require(w nethttp.ResponseWriter, r *nethttp.Request, role auct
 }
 
 func (s *Server) requireAny(w nethttp.ResponseWriter, r *nethttp.Request) (auction.User, bool) {
-	user, err := s.auth.Require(bearerToken(r), auction.RoleBidder)
+	return s.requireAnyToken(w, bearerToken(r))
+}
+
+func (s *Server) requireAnyToken(w nethttp.ResponseWriter, token string) (auction.User, bool) {
+	user, err := s.auth.Require(token, auction.RoleBidder)
 	if err == nil {
 		return user, true
 	}
-	user, err = s.auth.Require(bearerToken(r), auction.RoleAdmin)
+	user, err = s.auth.Require(token, auction.RoleAdmin)
 	if err == nil {
 		return user, true
 	}

@@ -19,6 +19,7 @@ var (
 type BidCommand struct {
 	AuctionID string
 	UserID    string
+	UserName  string
 	RequestID string
 	Amount    int64
 	Now       time.Time

@@ -33,8 +33,8 @@ test("管理端启动竞拍，用户端封顶成交", async ({ browser }) => {
   await expect(bidder.getByText("SOLD").first()).toBeVisible();
   await expect(bidder.getByText(/成交价 ￥300|已成交/)).toBeVisible();
 
-  await admin.getByRole("button", { name: "刷新" }).click();
   await expect(admin.getByText("SOLD").first()).toBeVisible();
+  await expect(admin.getByText(/竞拍结束|封顶价/).first()).toBeVisible();
 
   await adminContext.close();
   await bidderContext.close();

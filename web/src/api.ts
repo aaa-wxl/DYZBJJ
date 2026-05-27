@@ -65,6 +65,15 @@ export type BidResult = {
   idempotent: boolean;
 };
 
+export type AuctionEvent = {
+  type: "snapshot" | "bidAccepted" | "auctionExtended" | "auctionEnded" | "auctionCancelled";
+  auctionId?: string;
+  snapshot?: Snapshot;
+  reason?: string;
+  serverTime?: string;
+  meta?: Record<string, string>;
+};
+
 export type AuctionResult = {
   auction: Auction;
   order?: {

@@ -110,6 +110,43 @@ p {
   padding: 9px 10px;
 }
 
+.event-log {
+  display: grid;
+  gap: 8px;
+  max-height: 230px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  padding: 12px;
+}
+
+.event-log h3 {
+  margin: 0 0 4px;
+  font-size: 16px;
+}
+
+.event-log p {
+  margin: 0;
+  border-left: 3px solid var(--green);
+  background: #f5f1e8;
+  color: var(--ink);
+  padding: 8px 9px;
+  line-height: 1.5;
+}
+
+.event-log p span {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.event-log .empty-log {
+  border-left-color: var(--line);
+  color: var(--muted);
+}
+
 .login-page {
   min-height: 100vh;
   display: flex;
@@ -483,6 +520,20 @@ dd {
 
 .mobile-message {
   margin: 0 16px 16px;
+}
+
+.mobile-log-wrap {
+  display: grid;
+  gap: 12px;
+  padding: 0 16px 18px;
+}
+
+.mobile-log-wrap .mobile-message {
+  margin: 0;
+}
+
+.mobile-event-log {
+  max-height: 190px;
 }
 
 .bid-dock {

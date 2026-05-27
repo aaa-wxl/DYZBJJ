@@ -149,6 +149,10 @@ func (r *authRepoStub) GetUserByToken(string) (auction.User, error) {
 	return r.getUser, r.getUserErr
 }
 
+func (r *authRepoStub) GetUser(string) (auction.User, error) {
+	return r.getUser, r.getUserErr
+}
+
 func (r *authRepoStub) CreateAuction(a auction.Auction) (auction.Auction, error) {
 	return a, nil
 }

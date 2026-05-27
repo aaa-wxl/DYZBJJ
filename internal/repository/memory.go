@@ -56,6 +56,16 @@ func (r *MemoryRepository) GetUserByToken(token string) (auction.User, error) {
 	return user, nil
 }
 
+func (r *MemoryRepository) GetUser(id string) (auction.User, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	user, ok := r.users[id]
+	if !ok {
+		return auction.User{}, ErrNotFound
+	}
+	return user, nil
+}
+
 func (r *MemoryRepository) CreateAuction(a auction.Auction) (auction.Auction, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

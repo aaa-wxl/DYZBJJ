@@ -53,6 +53,11 @@ func (s *AuctionService) GetAuction(id string) (auction.Auction, error) {
 
 // StartAuction 启动竞拍并初始化实时快照。
 func (s *AuctionService) StartAuction(id string, now time.Time) (auction.Snapshot, error) {
+	return s.StartAuctionBy(id, now, auction.User{})
+}
+
+// StartAuctionBy 启动竞拍，并把操作者写入实时事件。
+func (s *AuctionService) StartAuctionBy(id string, now time.Time, actor auction.User) (auction.Snapshot, error) {
 	a, err := s.repo.GetAuction(id)
 	if err != nil {
 		return auction.Snapshot{}, err
@@ -68,12 +73,17 @@ func (s *AuctionService) StartAuction(id string, now time.Time) (auction.Snapsho
 		return auction.Snapshot{}, err
 	}
 	s.scheduleFinish(id, snapshot.EndsAt)
-	s.hub.Broadcast(ws.Event{Type: ws.EventSnapshot, AuctionID: id, Snapshot: snapshot})
+	s.hub.Broadcast(ws.Event{Type: ws.EventSnapshot, AuctionID: id, Snapshot: snapshot, Meta: actorMeta(actor)})
 	return snapshot, nil
 }
 
 // CancelAuction 取消未结束竞拍并广播取消事件。
 func (s *AuctionService) CancelAuction(id string, now time.Time) (auction.Snapshot, error) {
+	return s.CancelAuctionBy(id, now, auction.User{})
+}
+
+// CancelAuctionBy 取消竞拍，并把操作者写入实时事件。
+func (s *AuctionService) CancelAuctionBy(id string, now time.Time, actor auction.User) (auction.Snapshot, error) {
 	a, err := s.repo.GetAuction(id)
 	if err != nil {
 		return auction.Snapshot{}, err
@@ -89,7 +99,7 @@ func (s *AuctionService) CancelAuction(id string, now time.Time) (auction.Snapsh
 		snapshot = a.ToSnapshot(now)
 	}
 	s.stopFinishTimer(id)
-	s.hub.Broadcast(ws.Event{Type: ws.EventAuctionCancelled, AuctionID: id, Snapshot: snapshot, Reason: "merchant_cancelled"})
+	s.hub.Broadcast(ws.Event{Type: ws.EventAuctionCancelled, AuctionID: id, Snapshot: snapshot, Reason: "merchant_cancelled", Meta: actorMeta(actor)})
 	return snapshot, nil
 }
 
@@ -132,7 +142,7 @@ func (s *AuctionService) PlaceBid(command redis.BidCommand) (redis.BidResult, er
 		eventType = ws.EventAuctionExtended
 		reason = "bid_near_end"
 	}
-	s.hub.Broadcast(ws.Event{Type: eventType, AuctionID: command.AuctionID, Snapshot: result.Snapshot, Reason: reason})
+	s.hub.Broadcast(ws.Event{Type: eventType, AuctionID: command.AuctionID, Snapshot: result.Snapshot, Reason: reason, Meta: bidMeta(command)})
 	return result, nil
 }
 
@@ -193,6 +203,24 @@ func (s *AuctionService) syncAuctionFromSnapshot(snapshot auction.Snapshot) erro
 		}
 	}
 	return nil
+}
+
+func actorMeta(actor auction.User) map[string]string {
+	if actor.ID == "" {
+		return nil
+	}
+	return map[string]string{"actorId": actor.ID, "actorName": actor.Name}
+}
+
+func bidMeta(command redis.BidCommand) map[string]string {
+	meta := map[string]string{
+		"bidderId": command.UserID,
+		"amount":   fmt.Sprintf("%d", command.Amount),
+	}
+	if command.UserName != "" {
+		meta["bidderName"] = command.UserName
+	}
+	return meta
 }
 
 func (s *AuctionService) scheduleFinish(id string, endsAt time.Time) {
