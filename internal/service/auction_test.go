@@ -1,6 +1,8 @@
 package service
 
 import (
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -132,6 +134,42 @@ func TestAuctionCancelStopsAutomaticFinish(t *testing.T) {
 	}
 }
 
+func TestPlaceBidReturnsAuditSaveError(t *testing.T) {
+	baseRepo := repository.NewMemoryRepository()
+	repo := &failingBidRepository{MemoryRepository: baseRepo}
+	store := redis.NewMemoryStore()
+	svc := NewAuctionService(repo, store, ws.NewHub())
+	a, err := svc.CreateAuction("merchant-1", auction.Product{Name: "jade"}, auction.Rules{
+		StartPrice:      0,
+		Increment:       100,
+		Duration:        time.Minute,
+		CeilingPrice:    1000,
+		ExtendThreshold: 0,
+		ExtendBy:        0,
+	})
+	if err != nil {
+		t.Fatalf("create auction: %v", err)
+	}
+	started, err := svc.StartAuction(a.ID, time.Now().UTC())
+	if err != nil {
+		t.Fatalf("start auction: %v", err)
+	}
+
+	_, err = svc.PlaceBid(redis.BidCommand{
+		AuctionID: a.ID,
+		UserID:    "user-1",
+		RequestID: "req-save-fails",
+		Amount:    100,
+		Now:       started.ServerTime.Add(time.Second),
+	})
+	if err == nil {
+		t.Fatal("expected save bid audit error")
+	}
+	if !strings.Contains(err.Error(), "save bid audit") {
+		t.Fatalf("error = %v, want save bid audit context", err)
+	}
+}
+
 func newAuctionServiceFixture(t *testing.T, rules auction.Rules) (*repository.MemoryRepository, *redis.MemoryStore, *AuctionService, auction.Auction) {
 	t.Helper()
 	repo := repository.NewMemoryRepository()
@@ -162,4 +200,12 @@ func waitForStatus(t *testing.T, repo *repository.MemoryRepository, id string, w
 		t.Fatalf("get auction: %v", err)
 	}
 	t.Fatalf("status = %s, want %s within %s", got.Status, want, timeout)
+}
+
+type failingBidRepository struct {
+	*repository.MemoryRepository
+}
+
+func (r *failingBidRepository) SaveBid(auction.Bid) error {
+	return errors.New("disk is full")
 }

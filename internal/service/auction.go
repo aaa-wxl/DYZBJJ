@@ -105,14 +105,16 @@ func (s *AuctionService) PlaceBid(command redis.BidCommand) (redis.BidResult, er
 		return result, err
 	}
 	if !result.Idempotent {
-		_ = s.repo.SaveBid(auction.Bid{
+		if err := s.repo.SaveBid(auction.Bid{
 			ID:        result.BidID,
 			AuctionID: command.AuctionID,
 			UserID:    command.UserID,
 			RequestID: command.RequestID,
 			Amount:    command.Amount,
 			CreatedAt: command.Now.UTC(),
-		})
+		}); err != nil {
+			return result, fmt.Errorf("save bid audit: %w", err)
+		}
 	}
 	if err := s.syncAuctionFromSnapshot(result.Snapshot); err != nil {
 		return result, err
