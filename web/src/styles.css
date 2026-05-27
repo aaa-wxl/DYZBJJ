@@ -1,14 +1,17 @@
 :root {
-  /* 竞拍控制台使用深色作战台配色，突出价格和状态变化。 */
-  color: #f4f1e8;
-  background: #12110f;
+  color: #161616;
+  background: #f5f1e8;
   font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif;
-  --panel: #1d1b17;
-  --line: #3d372d;
-  --gold: #d7a84b;
-  --red: #d9543f;
-  --green: #66c18c;
-  --ink: #12110f;
+  --paper: #f8f4eb;
+  --ink: #161616;
+  --muted: #716a5f;
+  --line: #d8cfc0;
+  --panel: #fffaf0;
+  --charcoal: #24262a;
+  --green: #1f8a5b;
+  --red: #b84332;
+  --amber: #c88b2d;
+  --blue: #345f8f;
 }
 
 * {
@@ -28,19 +31,19 @@ textarea {
 }
 
 button {
-  border: 1px solid var(--gold);
-  border-radius: 6px;
-  background: var(--gold);
-  color: var(--ink);
   min-height: 40px;
+  border: 1px solid var(--ink);
+  border-radius: 6px;
+  background: var(--ink);
+  color: white;
   padding: 0 14px;
   cursor: pointer;
   font-weight: 700;
 }
 
 button:disabled {
-  opacity: 0.45;
   cursor: not-allowed;
+  opacity: 0.45;
 }
 
 input,
@@ -48,263 +51,535 @@ textarea {
   width: 100%;
   border: 1px solid var(--line);
   border-radius: 6px;
-  background: #11100e;
-  color: #f4f1e8;
-  padding: 10px;
+  background: white;
+  color: var(--ink);
+  padding: 10px 11px;
 }
 
 textarea {
-  min-height: 74px;
+  min-height: 92px;
   resize: vertical;
-}
-
-.shell {
-  /* 背景网格弱化装饰感，保持操作界面可扫描。 */
-  min-height: 100vh;
-  padding: 24px;
-  background:
-    linear-gradient(135deg, rgba(215, 168, 75, 0.16), transparent 32%),
-    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.025) 0 1px, transparent 1px 48px),
-    #12110f;
-}
-
-.topbar {
-  display: flex;
-  align-items: end;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 20px;
-}
-
-.eyebrow {
-  margin: 0 0 8px;
-  color: var(--gold);
-  text-transform: uppercase;
-  letter-spacing: 0;
-  font-size: 12px;
-}
-
-h1,
-h2 {
-  margin: 0;
-  letter-spacing: 0;
-}
-
-h1 {
-  font-size: clamp(28px, 5vw, 54px);
-}
-
-.status-strip {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 12px 16px;
-  min-width: 180px;
-  background: rgba(29, 27, 23, 0.86);
-}
-
-.status-strip span,
-.metric span {
-  display: block;
-  color: #b8ad9c;
-  font-size: 12px;
-}
-
-.status-strip strong {
-  display: block;
-  margin-top: 4px;
-  font-size: 28px;
-  color: var(--gold);
-}
-
-.workspace {
-  /* 桌面端并排展示主播端和用户端，方便演示完整闭环。 */
-  display: grid;
-  grid-template-columns: minmax(360px, 0.96fr) minmax(420px, 1.2fr);
-  gap: 18px;
-}
-
-.panel {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: rgba(29, 27, 23, 0.94);
-  padding: 16px;
-}
-
-.panel-head,
-.actions,
-.bidline {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.panel-head {
-  justify-content: space-between;
-  margin-bottom: 14px;
-}
-
-.form-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
 }
 
 label {
   display: grid;
   gap: 6px;
-  color: #d8cfbd;
+  color: var(--muted);
   font-size: 13px;
 }
 
-.wide {
-  grid-column: 1 / -1;
+h1,
+h2,
+h3,
+p {
+  margin-top: 0;
 }
 
-.auction-list {
-  display: grid;
-  gap: 8px;
-  margin-top: 16px;
-}
-
-.auction-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  border-color: var(--line);
-  background: #11100e;
-  color: #f4f1e8;
-}
-
-.auction-row.active {
-  border-color: var(--gold);
-  box-shadow: inset 4px 0 0 var(--gold);
-}
-
-.auction-row em {
-  color: var(--green);
-  font-style: normal;
+.eyebrow {
+  margin-bottom: 8px;
+  color: var(--amber);
   font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
 }
 
-.actions {
-  flex-wrap: wrap;
-  margin-top: 14px;
+.primary-btn {
+  background: var(--green);
+  border-color: var(--green);
 }
 
-.actions button {
+.ghost-btn,
+.text-btn {
   background: transparent;
-  color: var(--gold);
+  color: var(--ink);
 }
 
-.video-stage {
-  /* 直播画面区域使用商品图作为第一视觉信号。 */
-  min-height: 320px;
-  border-radius: 8px;
-  background-position: center;
-  background-size: cover;
-  padding: 24px;
+.danger-btn {
+  background: var(--red);
+  border-color: var(--red);
+}
+
+.error-line,
+.notice-line,
+.mobile-message {
+  margin: 0;
+  border-left: 3px solid var(--amber);
+  background: #fff4d9;
+  color: #5f3a00;
+  padding: 9px 10px;
+}
+
+.login-page {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: minmax(360px, 1.05fr) minmax(340px, 0.7fr);
+  background:
+    linear-gradient(90deg, rgba(36, 38, 42, 0.92), rgba(36, 38, 42, 0.76)),
+    url("https://images.unsplash.com/photo-1617038260897-41a1f14a8ca0?auto=format&fit=crop&w=1500&q=80") center/cover;
+}
+
+.login-visual {
+  min-height: 100vh;
   display: flex;
   align-items: end;
   justify-content: space-between;
-  border: 1px solid var(--line);
-}
-
-.video-stage p {
-  margin: 0 0 8px;
-  color: #d8cfbd;
-}
-
-.video-stage h2 {
-  max-width: 520px;
-  font-size: clamp(24px, 4vw, 46px);
-}
-
-.price-tag {
-  border-radius: 8px;
-  background: var(--red);
+  padding: 42px;
   color: white;
-  padding: 14px 18px;
+}
+
+.login-price {
+  font-size: clamp(48px, 8vw, 108px);
+  font-weight: 900;
+}
+
+.login-lot {
+  display: grid;
+  gap: 8px;
+  text-align: right;
+}
+
+.login-lot span {
+  color: #f0bf5b;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.login-lot strong {
+  font-size: 28px;
+}
+
+.login-panel {
+  align-self: center;
+  margin: 28px;
+  border-radius: 8px;
+  background: var(--paper);
+  padding: 30px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.22);
+}
+
+.login-panel h1 {
+  margin-bottom: 22px;
+  font-size: 34px;
+}
+
+.login-form {
+  display: grid;
+  gap: 16px;
+}
+
+.segmented {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.segmented button {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+}
+
+.segmented button.active {
+  background: var(--ink);
+  color: white;
+}
+
+.admin-shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 290px 1fr;
+  background: var(--paper);
+}
+
+.admin-sidebar {
+  display: grid;
+  align-content: start;
+  gap: 18px;
+  min-height: 100vh;
+  padding: 24px;
+  background: var(--charcoal);
+  color: white;
+}
+
+.brand-block h1 {
+  margin-bottom: 8px;
   font-size: 30px;
+}
+
+.brand-block span {
+  color: #cdc5b8;
+}
+
+.admin-sidebar .ghost-btn {
+  border-color: #6c6e73;
+  color: white;
+}
+
+.auction-stack {
+  display: grid;
+  gap: 8px;
+}
+
+.auction-item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 54px;
+  border-color: #46484e;
+  background: #303238;
+  color: white;
+  text-align: left;
+}
+
+.auction-item.active {
+  border-color: #f0bf5b;
+  box-shadow: inset 4px 0 0 #f0bf5b;
+}
+
+.admin-main {
+  padding: 24px;
+}
+
+.admin-header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 18px;
+}
+
+.admin-header h2 {
+  margin: 0;
+  font-size: clamp(28px, 4vw, 48px);
+}
+
+.admin-header strong {
+  font-size: 42px;
+  color: var(--green);
+}
+
+.admin-grid {
+  display: grid;
+  grid-template-columns: minmax(360px, 0.86fr) minmax(420px, 1.1fr);
+  gap: 18px;
+}
+
+.auction-form,
+.lot-panel {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 18px;
+}
+
+.auction-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 13px;
+}
+
+.auction-form h3,
+.wide,
+.auction-form .primary-btn {
+  grid-column: 1 / -1;
+}
+
+.lot-panel {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+
+.lot-image {
+  min-height: 300px;
+  border-radius: 8px;
+  background-color: #ddd2c2;
+  background-position: center;
+  background-size: cover;
+}
+
+.lot-summary p {
+  color: var(--muted);
+  line-height: 1.65;
+}
+
+.lot-summary dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+
+.lot-summary dl div,
+.mobile-metrics div {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  padding: 12px;
+}
+
+dt,
+.mobile-metrics span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+dd {
+  margin: 5px 0 0;
   font-weight: 800;
 }
 
-.bid-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+.admin-actions {
+  display: flex;
+  flex-wrap: wrap;
   gap: 10px;
-  margin: 14px 0;
 }
 
-.metric {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 12px;
-  background: #11100e;
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  border-radius: 999px;
+  padding: 0 9px;
+  background: #e5dfd2;
+  color: var(--ink);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 900;
 }
 
-.metric strong {
-  display: block;
-  margin-top: 8px;
-  color: #f4f1e8;
-  overflow-wrap: anywhere;
+.status-pill.running {
+  background: #d6efdf;
+  color: var(--green);
 }
 
-.bidline {
+.status-pill.sold {
+  background: #e0ecfa;
+  color: var(--blue);
+}
+
+.status-pill.ended,
+.status-pill.cancelled {
+  background: #f2dfdc;
+  color: var(--red);
+}
+
+.empty-state,
+.mobile-empty {
   display: grid;
-  grid-template-columns: 1fr 1fr auto;
+  place-items: center;
+  min-height: 260px;
+  color: var(--muted);
 }
 
-.timeline {
-  /* 实时事件日志用于观察 WebSocket 推送效果。 */
-  display: grid;
-  gap: 8px;
-  margin-top: 14px;
+.mobile-shell {
+  min-height: 100vh;
+  max-width: 520px;
+  margin: 0 auto;
+  background: var(--paper);
+  color: var(--ink);
+  padding-bottom: 108px;
 }
 
-.timeline p {
+.mobile-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  background: rgba(248, 244, 235, 0.94);
+  padding: 12px 16px;
+  backdrop-filter: blur(10px);
+}
+
+.mobile-topbar p {
   margin: 0;
-  border-left: 3px solid var(--gold);
-  background: #11100e;
-  padding: 9px 10px;
-  color: #d8cfbd;
+  color: var(--muted);
+  font-size: 12px;
 }
 
-.result {
-  margin: 18px 0 0;
-  border: 1px solid var(--line);
+.mobile-topbar strong {
+  display: block;
+  margin-top: 2px;
+}
+
+.text-btn {
+  border: 0;
+  min-height: 32px;
+  padding: 0 4px;
+}
+
+.lot-tabs {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 12px 16px;
+}
+
+.lot-tabs button {
+  flex: 0 0 auto;
+  border-color: var(--line);
+  background: white;
+  color: var(--ink);
+}
+
+.lot-tabs button.active {
+  border-color: var(--green);
+  color: var(--green);
+}
+
+.product-hero {
+  position: relative;
+  margin: 0 16px;
+  overflow: hidden;
   border-radius: 8px;
+  background: #ddd2c2;
+}
+
+.product-hero img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 5;
+  object-fit: cover;
+}
+
+.hero-status {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-radius: 8px;
+  background: rgba(22, 22, 22, 0.86);
+  color: white;
+  padding: 12px;
+}
+
+.hero-status span {
+  color: #f0bf5b;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.hero-status strong {
+  font-size: 28px;
+}
+
+.product-copy {
   padding: 16px;
-  overflow: auto;
-  background: #11100e;
-  color: #d8cfbd;
+}
+
+.product-copy h1 {
+  margin-bottom: 10px;
+  font-size: 28px;
+}
+
+.product-copy p {
+  margin-bottom: 0;
+  color: var(--muted);
+  line-height: 1.7;
+}
+
+.mobile-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 0 16px 16px;
+}
+
+.mobile-metrics strong {
+  display: block;
+  margin-top: 6px;
+  font-size: 20px;
+}
+
+.mobile-message {
+  margin: 0 16px 16px;
+}
+
+.bid-dock {
+  position: fixed;
+  left: 50%;
+  bottom: 0;
+  z-index: 10;
+  width: min(520px, 100%);
+  transform: translateX(-50%);
+  display: grid;
+  grid-template-columns: 1fr 110px 82px;
+  gap: 8px;
+  align-items: center;
+  border-top: 1px solid var(--line);
+  background: rgba(248, 244, 235, 0.96);
+  padding: 12px;
+  box-shadow: 0 -16px 38px rgba(0, 0, 0, 0.12);
+  backdrop-filter: blur(10px);
+}
+
+.bid-dock span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.bid-dock strong {
+  display: block;
+  margin-top: 2px;
+  color: var(--green);
+  font-size: 22px;
+}
+
+.bid-dock input {
+  height: 42px;
 }
 
 @media (max-width: 980px) {
-  .workspace,
-  .topbar {
+  .login-page,
+  .admin-shell,
+  .admin-grid {
     grid-template-columns: 1fr;
-    display: grid;
   }
 
-  .bid-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .login-visual {
+    min-height: 42vh;
+  }
+
+  .admin-sidebar {
+    min-height: auto;
   }
 }
 
-@media (max-width: 620px) {
-  .shell {
-    padding: 14px;
+@media (max-width: 560px) {
+  .login-page {
+    display: block;
   }
 
-  .form-grid,
-  .bidline,
-  .bid-grid {
+  .login-visual {
+    min-height: 36vh;
+    padding: 22px;
+  }
+
+  .login-panel {
+    margin: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .admin-main,
+  .admin-sidebar {
+    padding: 16px;
+  }
+
+  .auction-form,
+  .lot-summary dl {
     grid-template-columns: 1fr;
-  }
-
-  .video-stage {
-    min-height: 260px;
-    align-items: start;
-    flex-direction: column;
   }
 }
