@@ -30,6 +30,18 @@ type FileRepository struct {
 	orders   map[string]auction.Order
 }
 
+type storedUser struct {
+	ID           string             `json:"id"`
+	Username     string             `json:"username"`
+	DisplayName  string             `json:"displayName"`
+	PasswordHash string             `json:"passwordHash"`
+	PasswordSalt string             `json:"passwordSalt"`
+	Role         auction.Role       `json:"role"`
+	Status       auction.UserStatus `json:"status"`
+	CreatedAt    time.Time          `json:"createdAt"`
+	UpdatedAt    time.Time          `json:"updatedAt"`
+}
+
 func NewFileRepository(dir string) (*FileRepository, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
@@ -42,7 +54,7 @@ func NewFileRepository(dir string) (*FileRepository, error) {
 		bids:     map[string][]auction.Bid{},
 		orders:   map[string]auction.Order{},
 	}
-	if err := r.load(usersFile, &r.users); err != nil {
+	if err := r.loadUsers(); err != nil {
 		return nil, err
 	}
 	if err := r.load(sessionsFile, &r.sessions); err != nil {
@@ -61,11 +73,15 @@ func NewFileRepository(dir string) (*FileRepository, error) {
 }
 
 func (r *FileRepository) SaveUser(user auction.User) error {
+	return r.UpsertUser(user)
+}
+
+func (r *FileRepository) UpsertUser(user auction.User) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	users := cloneMap(r.users)
 	users[user.ID] = user
-	if err := r.save(usersFile, users); err != nil {
+	if err := r.saveUsers(users); err != nil {
 		return err
 	}
 	r.users = users
@@ -106,6 +122,30 @@ func (r *FileRepository) GetUser(id string) (auction.User, error) {
 		return auction.User{}, ErrNotFound
 	}
 	return user, nil
+}
+
+func (r *FileRepository) GetUserByUsername(username string) (auction.User, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, user := range r.users {
+		if user.Username == username {
+			return user, nil
+		}
+	}
+	return auction.User{}, ErrNotFound
+}
+
+func (r *FileRepository) ListUsers() ([]auction.User, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	items := make([]auction.User, 0, len(r.users))
+	for _, user := range r.users {
+		items = append(items, user)
+	}
+	sort.Slice(items, func(i, j int) bool {
+		return items[i].Username < items[j].Username
+	})
+	return items, nil
 }
 
 func (r *FileRepository) CreateAuction(a auction.Auction) (auction.Auction, error) {
@@ -216,6 +256,45 @@ func (r *FileRepository) load(name string, target any) error {
 		return nil
 	}
 	return json.Unmarshal(data, target)
+}
+
+func (r *FileRepository) loadUsers() error {
+	users := map[string]storedUser{}
+	if err := r.load(usersFile, &users); err != nil {
+		return err
+	}
+	for id, user := range users {
+		r.users[id] = auction.User{
+			ID:           user.ID,
+			Username:     user.Username,
+			DisplayName:  user.DisplayName,
+			PasswordHash: user.PasswordHash,
+			PasswordSalt: user.PasswordSalt,
+			Role:         user.Role,
+			Status:       user.Status,
+			CreatedAt:    user.CreatedAt,
+			UpdatedAt:    user.UpdatedAt,
+		}
+	}
+	return nil
+}
+
+func (r *FileRepository) saveUsers(users map[string]auction.User) error {
+	stored := make(map[string]storedUser, len(users))
+	for id, user := range users {
+		stored[id] = storedUser{
+			ID:           user.ID,
+			Username:     user.Username,
+			DisplayName:  user.DisplayName,
+			PasswordHash: user.PasswordHash,
+			PasswordSalt: user.PasswordSalt,
+			Role:         user.Role,
+			Status:       user.Status,
+			CreatedAt:    user.CreatedAt,
+			UpdatedAt:    user.UpdatedAt,
+		}
+	}
+	return r.save(usersFile, stored)
 }
 
 func (r *FileRepository) save(name string, value any) error {

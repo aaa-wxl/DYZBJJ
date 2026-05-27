@@ -2,6 +2,7 @@
 package repository
 
 import (
+	"sort"
 	"sync"
 	"time"
 
@@ -29,6 +30,10 @@ func NewMemoryRepository() *MemoryRepository {
 }
 
 func (r *MemoryRepository) SaveUser(user auction.User) error {
+	return r.UpsertUser(user)
+}
+
+func (r *MemoryRepository) UpsertUser(user auction.User) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.users[user.ID] = user
@@ -64,6 +69,30 @@ func (r *MemoryRepository) GetUser(id string) (auction.User, error) {
 		return auction.User{}, ErrNotFound
 	}
 	return user, nil
+}
+
+func (r *MemoryRepository) GetUserByUsername(username string) (auction.User, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, user := range r.users {
+		if user.Username == username {
+			return user, nil
+		}
+	}
+	return auction.User{}, ErrNotFound
+}
+
+func (r *MemoryRepository) ListUsers() ([]auction.User, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	items := make([]auction.User, 0, len(r.users))
+	for _, user := range r.users {
+		items = append(items, user)
+	}
+	sort.Slice(items, func(i, j int) bool {
+		return items[i].Username < items[j].Username
+	})
+	return items, nil
 }
 
 func (r *MemoryRepository) CreateAuction(a auction.Auction) (auction.Auction, error) {

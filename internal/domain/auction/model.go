@@ -30,6 +30,13 @@ const (
 	RoleBidder Role = "bidder"
 )
 
+type UserStatus string
+
+const (
+	UserActive   UserStatus = "active"
+	UserDisabled UserStatus = "disabled"
+)
+
 var (
 	ErrInvalidRules      = errors.New("invalid auction rules")
 	ErrInvalidTransition = errors.New("invalid auction state transition")
@@ -37,10 +44,15 @@ var (
 )
 
 type User struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Role      Role      `json:"role"`
-	CreatedAt time.Time `json:"createdAt"`
+	ID           string     `json:"id"`
+	Username     string     `json:"username"`
+	DisplayName  string     `json:"displayName"`
+	PasswordHash string     `json:"-"`
+	PasswordSalt string     `json:"-"`
+	Role         Role       `json:"role"`
+	Status       UserStatus `json:"status"`
+	CreatedAt    time.Time  `json:"createdAt"`
+	UpdatedAt    time.Time  `json:"updatedAt"`
 }
 
 type Session struct {

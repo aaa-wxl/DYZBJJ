@@ -20,10 +20,13 @@ func TestFileRepositoryPersistsRecordsAcrossInstancesAndKeepsFirstOrder(t *testi
 	}
 
 	user := auction.User{
-		ID:        "user-1",
-		Name:      "Alice",
-		Role:      auction.RoleBidder,
-		CreatedAt: now,
+		ID:          "user-1",
+		Username:    "alice",
+		DisplayName: "Alice",
+		Role:        auction.RoleBidder,
+		Status:      auction.UserActive,
+		CreatedAt:   now,
+		UpdatedAt:   now,
 	}
 	session := auction.Session{
 		Token:     "token-1",
@@ -145,10 +148,13 @@ func TestFileRepositoryGetUserByTokenRejectsExpiredSession(t *testing.T) {
 	}
 
 	user := auction.User{
-		ID:        "user-1",
-		Name:      "Alice",
-		Role:      auction.RoleBidder,
-		CreatedAt: time.Now().UTC().Add(-2 * time.Hour),
+		ID:          "user-1",
+		Username:    "alice",
+		DisplayName: "Alice",
+		Role:        auction.RoleBidder,
+		Status:      auction.UserActive,
+		CreatedAt:   time.Now().UTC().Add(-2 * time.Hour),
+		UpdatedAt:   time.Now().UTC().Add(-2 * time.Hour),
 	}
 	session := auction.Session{
 		Token:     "expired-token",
@@ -166,6 +172,49 @@ func TestFileRepositoryGetUserByTokenRejectsExpiredSession(t *testing.T) {
 
 	if _, err := repo.GetUserByToken(session.Token); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("GetUserByToken(expired) error = %v, want %v", err, ErrNotFound)
+	}
+}
+
+func TestFileRepositoryPersistsUsersByUsername(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now().UTC().Round(0)
+
+	repo, err := NewFileRepository(dir)
+	if err != nil {
+		t.Fatalf("NewFileRepository() error = %v", err)
+	}
+	user := auction.User{
+		ID:           "usr-user-a",
+		Username:     "userA",
+		DisplayName:  "用户A",
+		PasswordHash: "hash-a",
+		PasswordSalt: "salt-a",
+		Role:         auction.RoleBidder,
+		Status:       auction.UserActive,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}
+	if err := repo.UpsertUser(user); err != nil {
+		t.Fatalf("UpsertUser() error = %v", err)
+	}
+
+	reloaded, err := NewFileRepository(dir)
+	if err != nil {
+		t.Fatalf("NewFileRepository(reloaded) error = %v", err)
+	}
+	got, err := reloaded.GetUserByUsername("userA")
+	if err != nil {
+		t.Fatalf("GetUserByUsername() error = %v", err)
+	}
+	if got != user {
+		t.Fatalf("GetUserByUsername() = %+v, want %+v", got, user)
+	}
+	items, err := reloaded.ListUsers()
+	if err != nil {
+		t.Fatalf("ListUsers() error = %v", err)
+	}
+	if len(items) != 1 || items[0] != user {
+		t.Fatalf("ListUsers() = %+v, want [%+v]", items, user)
 	}
 }
 
