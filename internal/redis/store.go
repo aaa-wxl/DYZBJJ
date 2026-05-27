@@ -26,11 +26,11 @@ type BidCommand struct {
 
 // BidResult 描述一次出价处理后的快照、下一口价和幂等状态。
 type BidResult struct {
-	BidID       string
-	Snapshot    auction.Snapshot
-	NextMinimum int64
-	Extended    bool
-	Idempotent  bool
+	BidID       string           `json:"bidId"`
+	Snapshot    auction.Snapshot `json:"snapshot"`
+	NextMinimum int64            `json:"nextMinimum"`
+	Extended    bool             `json:"extended"`
+	Idempotent  bool             `json:"idempotent"`
 }
 
 // Store 抽象 Redis 原子出价能力，便于后续替换为真实 Redis Lua 实现。
