@@ -3,6 +3,7 @@ web/node_modules/
 web/dist/
 web/tsconfig.tsbuildinfo
 web/test-results/
+web/data/
 .backend*.log
 .frontend*.log
 .superpowers/
@@ -11,3 +12,5 @@ web/test-results/
 .worktrees
 data/
 data
+.gocache/
+.gocache

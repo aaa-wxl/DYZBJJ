@@ -1,4 +1,3 @@
-// api 启动竞拍系统的本地 HTTP/WebSocket 服务。
 package main
 
 import (
@@ -15,12 +14,18 @@ import (
 
 func main() {
 	cfg := config.Load()
-	// 当前实现使用内存 repository 和内存 Redis-like store，便于先验证核心闭环。
-	repo := repository.NewMemoryRepository()
+	repo, err := repository.NewFileRepository("data")
+	if err != nil {
+		log.Fatal(err)
+	}
 	store := redis.NewMemoryStore()
 	hub := ws.NewHub()
 	auctionService := service.NewAuctionService(repo, store, hub)
-	server := apphttp.NewServer(auctionService)
+	authService := service.NewAuthService(repo, cfg.JWTSecret, cfg.JWTTTL)
+	if err := authService.SeedDemoUsers(); err != nil {
+		log.Fatal(err)
+	}
+	server := apphttp.NewServer(auctionService, authService)
 
 	log.Printf("auction api listening on %s", cfg.HTTPAddr)
 	if err := nethttp.ListenAndServe(cfg.HTTPAddr, server.Handler()); err != nil {

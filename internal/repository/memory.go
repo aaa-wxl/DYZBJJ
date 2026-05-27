@@ -2,13 +2,17 @@
 package repository
 
 import (
+	"sort"
 	"sync"
+	"time"
 
 	"realtime-auction-core/internal/domain/auction"
 )
 
 type MemoryRepository struct {
 	mu       sync.Mutex
+	users    map[string]auction.User
+	sessions map[string]auction.Session
 	auctions map[string]auction.Auction
 	bids     map[string][]auction.Bid
 	orders   map[string]auction.Order
@@ -17,10 +21,78 @@ type MemoryRepository struct {
 // NewMemoryRepository 创建线程安全的内存 repository。
 func NewMemoryRepository() *MemoryRepository {
 	return &MemoryRepository{
+		users:    map[string]auction.User{},
+		sessions: map[string]auction.Session{},
 		auctions: map[string]auction.Auction{},
 		bids:     map[string][]auction.Bid{},
 		orders:   map[string]auction.Order{},
 	}
+}
+
+func (r *MemoryRepository) SaveUser(user auction.User) error {
+	return r.UpsertUser(user)
+}
+
+func (r *MemoryRepository) UpsertUser(user auction.User) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.users[user.ID] = user
+	return nil
+}
+
+func (r *MemoryRepository) SaveSession(session auction.Session) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.sessions[session.Token] = session
+	return nil
+}
+
+func (r *MemoryRepository) GetUserByToken(token string) (auction.User, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	session, ok := r.sessions[token]
+	if !ok || !time.Now().UTC().Before(session.ExpiresAt) {
+		return auction.User{}, ErrNotFound
+	}
+	user, ok := r.users[session.UserID]
+	if !ok {
+		return auction.User{}, ErrNotFound
+	}
+	return user, nil
+}
+
+func (r *MemoryRepository) GetUser(id string) (auction.User, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	user, ok := r.users[id]
+	if !ok {
+		return auction.User{}, ErrNotFound
+	}
+	return user, nil
+}
+
+func (r *MemoryRepository) GetUserByUsername(username string) (auction.User, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, user := range r.users {
+		if user.Username == username {
+			return user, nil
+		}
+	}
+	return auction.User{}, ErrNotFound
+}
+
+func (r *MemoryRepository) ListUsers() ([]auction.User, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	items := make([]auction.User, 0, len(r.users))
+	for _, user := range r.users {
+		items = append(items, user)
+	}
+	sort.Slice(items, func(i, j int) bool {
+		return items[i].Username < items[j].Username
+	})
+	return items, nil
 }
 
 func (r *MemoryRepository) CreateAuction(a auction.Auction) (auction.Auction, error) {

@@ -19,6 +19,7 @@ var (
 type BidCommand struct {
 	AuctionID string
 	UserID    string
+	UserName  string
 	RequestID string
 	Amount    int64
 	Now       time.Time
@@ -46,15 +47,21 @@ type Store interface {
 type MemoryStore struct {
 	mu        sync.Mutex
 	snapshots map[string]auction.Snapshot
-	rankings  map[string]map[string]int64
+	rankings  map[string]map[string]rankingEntry
 	requests  map[string]BidResult
+	bidSeq    int64
+}
+
+type rankingEntry struct {
+	Amount int64
+	Seq    int64
 }
 
 // NewMemoryStore 创建内存实时状态存储。
 func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
 		snapshots: map[string]auction.Snapshot{},
-		rankings:  map[string]map[string]int64{},
+		rankings:  map[string]map[string]rankingEntry{},
 		requests:  map[string]BidResult{},
 	}
 }
@@ -73,7 +80,7 @@ func (s *MemoryStore) InitAuction(snapshot auction.Snapshot) error {
 	snapshot.NextMinimumBid = auction.NextMinimumBid(snapshot.CurrentPrice, snapshot.Rules)
 	s.snapshots[snapshot.AuctionID] = snapshot
 	if _, ok := s.rankings[snapshot.AuctionID]; !ok {
-		s.rankings[snapshot.AuctionID] = map[string]int64{}
+		s.rankings[snapshot.AuctionID] = map[string]rankingEntry{}
 	}
 	return nil
 }
@@ -119,16 +126,19 @@ func (s *MemoryStore) PlaceBid(command BidCommand) (BidResult, error) {
 	snapshot.HighestBidder = command.UserID
 	snapshot.ServerTime = command.Now.UTC()
 	if _, ok := s.rankings[command.AuctionID]; !ok {
-		s.rankings[command.AuctionID] = map[string]int64{}
+		s.rankings[command.AuctionID] = map[string]rankingEntry{}
 	}
-	s.rankings[command.AuctionID][command.UserID] = command.Amount
+	s.bidSeq++
+	existing, hasExisting := s.rankings[command.AuctionID][command.UserID]
+	if !hasExisting || command.Amount > existing.Amount {
+		s.rankings[command.AuctionID][command.UserID] = rankingEntry{Amount: command.Amount, Seq: s.bidSeq}
+	}
 
 	if command.Amount >= snapshot.Rules.CeilingPrice {
 		// 封顶价优先于自动延时，达到封顶价立即成交。
 		snapshot.Status = auction.StatusSold
 	} else if snapshot.EndsAt.Sub(command.Now) <= snapshot.Rules.ExtendThreshold && snapshot.Rules.ExtendBy > 0 {
 		// 临近结束窗口内的有效出价触发自动延时。
-		snapshot.Status = auction.StatusExtended
 		snapshot.EndsAt = snapshot.EndsAt.Add(snapshot.Rules.ExtendBy)
 		extended = true
 	}
@@ -168,11 +178,11 @@ func (s *MemoryStore) Cancel(auctionID string, now time.Time) (auction.Snapshot,
 		return auction.Snapshot{}, ErrAuctionNotFound
 	}
 	switch snapshot.Status {
-	case auction.StatusDraft, auction.StatusScheduled, auction.StatusRunning, auction.StatusExtended:
+	case auction.StatusDraft, auction.StatusRunning:
 		snapshot.Status = auction.StatusCancelled
 		snapshot.ServerTime = now.UTC()
 		s.snapshots[auctionID] = snapshot
-		return snapshot, nil
+		return snapshotWithRank(snapshot, s.rankings[auctionID], ""), nil
 	default:
 		return snapshot, fmt.Errorf("%w: cannot cancel status %s", ErrBidRejected, snapshot.Status)
 	}
@@ -186,6 +196,9 @@ func (s *MemoryStore) FinishExpired(auctionID string, now time.Time) (auction.Sn
 	if !ok {
 		return auction.Snapshot{}, ErrAuctionNotFound
 	}
+	if snapshot.Status != auction.StatusRunning {
+		return snapshot, fmt.Errorf("%w: cannot finish status %s", ErrBidRejected, snapshot.Status)
+	}
 	if now.Before(snapshot.EndsAt) {
 		return snapshot, fmt.Errorf("%w: auction has not ended", ErrBidRejected)
 	}
@@ -196,28 +209,40 @@ func (s *MemoryStore) FinishExpired(auctionID string, now time.Time) (auction.Sn
 	}
 	snapshot.ServerTime = now.UTC()
 	s.snapshots[auctionID] = snapshot
-	return snapshot, nil
+	return snapshotWithRank(snapshot, s.rankings[auctionID], ""), nil
 }
 
 // snapshotWithRank 为指定用户补充当前排名。
-func snapshotWithRank(snapshot auction.Snapshot, ranking map[string]int64, userID string) auction.Snapshot {
-	type pair struct {
+func snapshotWithRank(snapshot auction.Snapshot, ranking map[string]rankingEntry, userID string) auction.Snapshot {
+	type row struct {
 		userID string
-		amount int64
+		entry  rankingEntry
 	}
-	var pairs []pair
-	for bidder, amount := range ranking {
-		pairs = append(pairs, pair{userID: bidder, amount: amount})
+	rows := make([]row, 0, len(ranking))
+	for id, entry := range ranking {
+		rows = append(rows, row{userID: id, entry: entry})
 	}
-	sort.Slice(pairs, func(i, j int) bool {
-		return pairs[i].amount > pairs[j].amount
+	sort.Slice(rows, func(i, j int) bool {
+		if rows[i].entry.Amount == rows[j].entry.Amount {
+			return rows[i].entry.Seq < rows[j].entry.Seq
+		}
+		return rows[i].entry.Amount > rows[j].entry.Amount
 	})
-	snapshot.Participants = len(pairs)
-	for i, pair := range pairs {
-		if pair.userID == userID {
-			snapshot.Rank = i + 1
-			break
+	snapshot.Rank = 0
+	snapshot.Leaderboard = snapshot.Leaderboard[:0]
+	for i, row := range rows {
+		rank := i + 1
+		if row.userID == userID {
+			snapshot.Rank = rank
+		}
+		if i < 5 {
+			snapshot.Leaderboard = append(snapshot.Leaderboard, auction.LeaderboardEntry{
+				Rank:   rank,
+				UserID: row.userID,
+				Amount: row.entry.Amount,
+			})
 		}
 	}
+	snapshot.Participants = len(rows)
 	return snapshot
 }

@@ -17,6 +17,8 @@ type AuctionService struct {
 	store      redis.Store
 	hub        *ws.Hub
 	settlement *SettlementService
+	timerMu    sync.Mutex
+	timers     map[string]*time.Timer
 }
 
 // NewAuctionService 组装竞拍应用服务依赖。
@@ -26,13 +28,14 @@ func NewAuctionService(repo repository.AuctionRepository, store redis.Store, hub
 		store:      store,
 		hub:        hub,
 		settlement: NewSettlementService(repo),
+		timers:     map[string]*time.Timer{},
 	}
 }
 
 // CreateAuction 创建 DRAFT 竞拍。
 func (s *AuctionService) CreateAuction(merchantID string, product auction.Product, rules auction.Rules) (auction.Auction, error) {
-	a, err := auction.NewAuction(merchantID, product, rules)
-	if err != nil {
+	a := auction.NewAuction(merchantID, product, rules)
+	if err := a.ValidateForCreate(); err != nil {
 		return auction.Auction{}, err
 	}
 	return s.repo.CreateAuction(a)
@@ -50,6 +53,11 @@ func (s *AuctionService) GetAuction(id string) (auction.Auction, error) {
 
 // StartAuction 启动竞拍并初始化实时快照。
 func (s *AuctionService) StartAuction(id string, now time.Time) (auction.Snapshot, error) {
+	return s.StartAuctionBy(id, now, auction.User{})
+}
+
+// StartAuctionBy 启动竞拍，并把操作者写入实时事件。
+func (s *AuctionService) StartAuctionBy(id string, now time.Time, actor auction.User) (auction.Snapshot, error) {
 	a, err := s.repo.GetAuction(id)
 	if err != nil {
 		return auction.Snapshot{}, err
@@ -64,12 +72,19 @@ func (s *AuctionService) StartAuction(id string, now time.Time) (auction.Snapsho
 	if err := s.store.InitAuction(snapshot); err != nil {
 		return auction.Snapshot{}, err
 	}
-	s.hub.Broadcast(ws.Event{Type: ws.EventSnapshot, AuctionID: id, Snapshot: snapshot})
+	snapshot = s.enrichLeaderboard(snapshot)
+	s.scheduleFinish(id, snapshot.EndsAt)
+	s.hub.Broadcast(ws.Event{Type: ws.EventSnapshot, AuctionID: id, Snapshot: snapshot, Meta: actorMeta(actor)})
 	return snapshot, nil
 }
 
 // CancelAuction 取消未结束竞拍并广播取消事件。
 func (s *AuctionService) CancelAuction(id string, now time.Time) (auction.Snapshot, error) {
+	return s.CancelAuctionBy(id, now, auction.User{})
+}
+
+// CancelAuctionBy 取消竞拍，并把操作者写入实时事件。
+func (s *AuctionService) CancelAuctionBy(id string, now time.Time, actor auction.User) (auction.Snapshot, error) {
 	a, err := s.repo.GetAuction(id)
 	if err != nil {
 		return auction.Snapshot{}, err
@@ -84,13 +99,19 @@ func (s *AuctionService) CancelAuction(id string, now time.Time) (auction.Snapsh
 	if err != nil {
 		snapshot = a.ToSnapshot(now)
 	}
-	s.hub.Broadcast(ws.Event{Type: ws.EventAuctionCancelled, AuctionID: id, Snapshot: snapshot, Reason: "merchant_cancelled"})
+	snapshot = s.enrichLeaderboard(snapshot)
+	s.stopFinishTimer(id)
+	s.hub.Broadcast(ws.Event{Type: ws.EventAuctionCancelled, AuctionID: id, Snapshot: snapshot, Reason: "merchant_cancelled", Meta: actorMeta(actor)})
 	return snapshot, nil
 }
 
 // Snapshot 返回用户进入或重连房间时的最新状态。
 func (s *AuctionService) Snapshot(id, userID string) (auction.Snapshot, error) {
-	return s.store.Snapshot(id, userID)
+	snapshot, err := s.store.Snapshot(id, userID)
+	if err != nil {
+		return auction.Snapshot{}, err
+	}
+	return s.enrichLeaderboard(snapshot), nil
 }
 
 // PlaceBid 处理用户出价，并在状态变化后广播事件。
@@ -99,34 +120,36 @@ func (s *AuctionService) PlaceBid(command redis.BidCommand) (redis.BidResult, er
 	if err != nil {
 		return result, err
 	}
-	if result.Idempotent {
-		return result, nil
-	}
-	if err := s.repo.SaveBid(auction.Bid{
-		ID:        result.BidID,
-		AuctionID: command.AuctionID,
-		UserID:    command.UserID,
-		RequestID: command.RequestID,
-		Amount:    command.Amount,
-		CreatedAt: command.Now.UTC(),
-	}); err != nil {
-		return result, fmt.Errorf("save bid audit: %w", err)
+	if !result.Idempotent {
+		if err := s.repo.SaveBid(auction.Bid{
+			ID:        result.BidID,
+			AuctionID: command.AuctionID,
+			UserID:    command.UserID,
+			RequestID: command.RequestID,
+			Amount:    command.Amount,
+			CreatedAt: command.Now.UTC(),
+		}); err != nil {
+			return result, fmt.Errorf("save bid audit: %w", err)
+		}
 	}
 	if err := s.syncAuctionFromSnapshot(result.Snapshot); err != nil {
 		return result, err
 	}
+	result.Snapshot = s.enrichLeaderboard(result.Snapshot)
 
 	eventType := ws.EventBidAccepted
 	reason := ""
 	if result.Snapshot.Status == auction.StatusSold {
 		// 成交事件使用结束广播，前端据此锁定出价入口。
+		s.stopFinishTimer(command.AuctionID)
 		eventType = ws.EventAuctionEnded
 		reason = "ceiling_price_reached"
 	} else if result.Extended {
+		s.scheduleFinish(command.AuctionID, result.Snapshot.EndsAt)
 		eventType = ws.EventAuctionExtended
 		reason = "bid_near_end"
 	}
-	s.hub.Broadcast(ws.Event{Type: eventType, AuctionID: command.AuctionID, Snapshot: result.Snapshot, Reason: reason})
+	s.hub.Broadcast(ws.Event{Type: eventType, AuctionID: command.AuctionID, Snapshot: result.Snapshot, Reason: reason, Meta: bidMeta(command)})
 	return result, nil
 }
 
@@ -139,6 +162,8 @@ func (s *AuctionService) FinishExpired(id string, now time.Time) (auction.Snapsh
 	if err := s.syncAuctionFromSnapshot(snapshot); err != nil {
 		return auction.Snapshot{}, err
 	}
+	snapshot = s.enrichLeaderboard(snapshot)
+	s.stopFinishTimer(id)
 	s.hub.Broadcast(ws.Event{Type: ws.EventAuctionEnded, AuctionID: id, Snapshot: snapshot, Reason: "time_expired"})
 	return snapshot, nil
 }
@@ -158,42 +183,9 @@ func (s *AuctionService) GetResult(id string) (map[string]any, error) {
 	return result, nil
 }
 
-// Subscribe 订阅指定用户视角的竞拍房间事件，推送前会补齐该用户自己的实时排名。
-func (s *AuctionService) Subscribe(id, userID string) (<-chan ws.Event, func()) {
-	events, cancelHub := s.hub.Subscribe(id)
-	out := make(chan ws.Event, 16)
-	done := make(chan struct{})
-	var once sync.Once
-
-	go func() {
-		defer close(out)
-		for {
-			select {
-			case <-done:
-				return
-			case event, ok := <-events:
-				if !ok {
-					return
-				}
-				if snapshot, err := s.store.Snapshot(id, userID); err == nil {
-					event.Snapshot = snapshot
-				}
-				select {
-				case out <- event:
-				case <-done:
-					return
-				}
-			}
-		}
-	}()
-
-	cancel := func() {
-		once.Do(func() {
-			close(done)
-			cancelHub()
-		})
-	}
-	return out, cancel
+// Subscribe 订阅指定竞拍房间的事件。
+func (s *AuctionService) Subscribe(id string) (<-chan ws.Event, func()) {
+	return s.hub.Subscribe(id)
 }
 
 // syncAuctionFromSnapshot 将实时快照收敛回 repository，并在 SOLD 时触发结算。
@@ -219,4 +211,71 @@ func (s *AuctionService) syncAuctionFromSnapshot(snapshot auction.Snapshot) erro
 		}
 	}
 	return nil
+}
+
+func actorMeta(actor auction.User) map[string]string {
+	if actor.ID == "" {
+		return nil
+	}
+	return map[string]string{"actorId": actor.ID, "actorName": actor.DisplayName}
+}
+
+func (s *AuctionService) enrichLeaderboard(snapshot auction.Snapshot) auction.Snapshot {
+	for i := range snapshot.Leaderboard {
+		user, err := s.repo.GetUser(snapshot.Leaderboard[i].UserID)
+		if err == nil && user.DisplayName != "" {
+			snapshot.Leaderboard[i].DisplayName = user.DisplayName
+			continue
+		}
+		snapshot.Leaderboard[i].DisplayName = snapshot.Leaderboard[i].UserID
+	}
+	return snapshot
+}
+
+func bidMeta(command redis.BidCommand) map[string]string {
+	meta := map[string]string{
+		"bidderId": command.UserID,
+		"amount":   fmt.Sprintf("%d", command.Amount),
+	}
+	if command.UserName != "" {
+		meta["bidderName"] = command.UserName
+	}
+	return meta
+}
+
+func (s *AuctionService) scheduleFinish(id string, endsAt time.Time) {
+	delay := time.Until(endsAt)
+	if delay < 0 {
+		delay = 0
+	}
+
+	var timer *time.Timer
+	timer = time.AfterFunc(delay, func() {
+		_, _ = s.FinishExpired(id, time.Now().UTC())
+		s.clearFinishTimer(id, timer)
+	})
+
+	s.timerMu.Lock()
+	if existing := s.timers[id]; existing != nil {
+		existing.Stop()
+	}
+	s.timers[id] = timer
+	s.timerMu.Unlock()
+}
+
+func (s *AuctionService) stopFinishTimer(id string) {
+	s.timerMu.Lock()
+	if timer := s.timers[id]; timer != nil {
+		timer.Stop()
+		delete(s.timers, id)
+	}
+	s.timerMu.Unlock()
+}
+
+func (s *AuctionService) clearFinishTimer(id string, timer *time.Timer) {
+	s.timerMu.Lock()
+	if s.timers[id] == timer {
+		delete(s.timers, id)
+	}
+	s.timerMu.Unlock()
 }
