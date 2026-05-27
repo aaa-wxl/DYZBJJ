@@ -5,8 +5,8 @@ import (
 	"log"
 	nethttp "net/http"
 
-	apphttp "realtime-auction-core/internal/http"
 	"realtime-auction-core/internal/config"
+	apphttp "realtime-auction-core/internal/http"
 	"realtime-auction-core/internal/redis"
 	"realtime-auction-core/internal/repository"
 	"realtime-auction-core/internal/service"

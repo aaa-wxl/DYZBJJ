@@ -6,6 +6,17 @@ import (
 	"time"
 )
 
+func validRules() Rules {
+	return Rules{
+		StartPrice:      0,
+		Increment:       100,
+		Duration:        time.Minute,
+		CeilingPrice:    1000,
+		ExtendThreshold: 10 * time.Second,
+		ExtendBy:        20 * time.Second,
+	}
+}
+
 func TestRulesValidateRejectsInvalidIncrement(t *testing.T) {
 	rules := Rules{
 		StartPrice:      0,
@@ -21,15 +32,19 @@ func TestRulesValidateRejectsInvalidIncrement(t *testing.T) {
 	}
 }
 
+func TestNewAuctionRejectsInvalidCreateInput(t *testing.T) {
+	_, err := NewAuction("", Product{Name: "jade"}, validRules())
+
+	if err == nil {
+		t.Fatal("expected missing merchant id to be rejected")
+	}
+}
+
 func TestAuctionStartInitializesRunningState(t *testing.T) {
-	a := NewAuction("merchant-1", Product{Name: "jade", ImageURL: "https://example.com/jade.png", Description: "demo"}, Rules{
-		StartPrice:      0,
-		Increment:       100,
-		Duration:        time.Minute,
-		CeilingPrice:    1000,
-		ExtendThreshold: 10 * time.Second,
-		ExtendBy:        20 * time.Second,
-	})
+	a, err := NewAuction("merchant-1", Product{Name: "jade", ImageURL: "https://example.com/jade.png", Description: "demo"}, validRules())
+	if err != nil {
+		t.Fatalf("new auction: %v", err)
+	}
 
 	now := time.Unix(100, 0)
 	if err := a.Start(now); err != nil {
@@ -58,9 +73,9 @@ func TestCancelRejectsFinishedAuction(t *testing.T) {
 func TestFinishSellsAuctionWithHighestBid(t *testing.T) {
 	a := Auction{
 		Status:        StatusRunning,
-		CurrentPrice: 500,
+		CurrentPrice:  500,
 		HighestBidder: "user-1",
-		EndsAt:       time.Unix(100, 0),
+		EndsAt:        time.Unix(100, 0),
 	}
 
 	if err := a.Finish(time.Unix(101, 0)); err != nil {

@@ -17,6 +17,13 @@ type LogItem = {
   message: string;
 };
 
+type ActionKey = "create" | "start" | "cancel" | "finish" | "result" | "bid";
+
+type ActionFeedback = {
+  tone: "idle" | "pending" | "success" | "error";
+  message: string;
+};
+
 const defaultAuction = {
   merchantId: "merchant-demo",
   productName: "星河翡翠手镯",
@@ -40,12 +47,23 @@ export function App() {
   const [bidAmount, setBidAmount] = useState(100);
   const [logs, setLogs] = useState<LogItem[]>([]);
   const [result, setResult] = useState<string>("");
+  const [now, setNow] = useState(() => Date.now());
+  const [pendingAction, setPendingAction] = useState<ActionKey | null>(null);
+  const [lastAction, setLastAction] = useState<ActionKey | null>(null);
+  const [feedback, setFeedback] = useState<ActionFeedback>({ tone: "idle", message: "等待操作" });
 
   const selected = useMemo(() => auctions.find((item) => item.id === selectedId), [auctions, selectedId]);
+  const remainingLabel = useMemo(() => formatRemaining(snapshot?.endsAt, now), [snapshot?.endsAt, now]);
 
   // 首次进入页面时加载已有竞拍，便于接续演示。
   useEffect(() => {
     void refreshAuctions();
+  }, []);
+
+  // 每秒刷新一次倒计时，确保用户入房和重连后都能看到剩余时间。
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
   }, []);
 
   // 选择竞拍或用户变化时重建 WebSocket 订阅，用最新快照恢复页面。
@@ -83,61 +101,89 @@ export function App() {
     setLogs((items) => [{ id: crypto.randomUUID(), message }, ...items].slice(0, 8));
   }
 
+  // runAction 统一处理按钮的处理中、成功和失败反馈，避免用户误以为点击无效。
+  async function runAction(key: ActionKey, pending: string, success: string, operation: () => Promise<void>) {
+    setPendingAction(key);
+    setLastAction(null);
+    setFeedback({ tone: "pending", message: pending });
+    try {
+      await Promise.all([operation(), delay(260)]);
+      setFeedback({ tone: "success", message: success });
+      setLastAction(key);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "操作失败";
+      setFeedback({ tone: "error", message });
+      appendLog(message);
+    } finally {
+      setPendingAction(null);
+    }
+  }
+
   // handleCreate 创建竞拍后立即选中新记录。
   async function handleCreate() {
-    const created = await createAuction(form);
-    appendLog(`已创建竞拍 ${created.id}`);
-    await refreshAuctions();
-    setSelectedId(created.id);
+    await runAction("create", "正在创建竞拍...", "竞拍创建成功", async () => {
+      const created = await createAuction(form);
+      appendLog(`已创建竞拍 ${created.id}`);
+      await refreshAuctions();
+      setSelectedId(created.id);
+    });
   }
 
   // handleStart 触发后端初始化实时竞拍状态。
   async function handleStart() {
     if (!selectedId) return;
-    const next = await startAuction(selectedId);
-    setSnapshot(next);
-    setBidAmount(next.nextMinimumBid);
-    appendLog("竞拍已启动");
-    await refreshAuctions();
+    await runAction("start", "正在启动竞拍...", "竞拍启动成功", async () => {
+      const next = await startAuction(selectedId);
+      setSnapshot(next);
+      setBidAmount(next.nextMinimumBid);
+      appendLog("竞拍已启动");
+      await refreshAuctions();
+    });
   }
 
   // handleCancel 演示主播异常取消竞拍。
   async function handleCancel() {
     if (!selectedId) return;
-    const next = await cancelAuction(selectedId);
-    setSnapshot(next);
-    appendLog("竞拍已取消");
-    await refreshAuctions();
+    await runAction("cancel", "正在取消竞拍...", "竞拍取消成功", async () => {
+      const next = await cancelAuction(selectedId);
+      setSnapshot(next);
+      appendLog("竞拍已取消");
+      await refreshAuctions();
+    });
   }
 
   // handleFinish 演示自然结束或手动结算到期竞拍。
   async function handleFinish() {
     if (!selectedId) return;
-    const next = await finishAuction(selectedId);
-    setSnapshot(next);
-    appendLog(`竞拍结束：${next.status}`);
-    await refreshAuctions();
+    await runAction("finish", "正在结算竞拍...", "竞拍结算完成", async () => {
+      const next = await finishAuction(selectedId);
+      setSnapshot(next);
+      appendLog(`竞拍结束：${next.status}`);
+      await refreshAuctions();
+    });
   }
 
   // handleBid 提交用户出价，并将下一口价反馈到输入框。
   async function handleBid() {
     if (!selectedId) return;
-    try {
+    await runAction("bid", "正在提交出价...", "出价提交成功", async () => {
       const bid = await placeBid(selectedId, userId, bidAmount);
       setSnapshot(bid.snapshot);
       setBidAmount(bid.snapshot.nextMinimumBid);
       appendLog(`出价成功：${bid.snapshot.currentPrice}`);
-    } catch (error) {
-      appendLog(error instanceof Error ? error.message : "出价失败");
-    }
+    });
   }
 
   // handleResult 展示后端返回的最终竞拍和订单摘要。
   async function handleResult() {
     if (!selectedId) return;
-    const data = await getResult(selectedId);
-    setResult(JSON.stringify(data, null, 2));
+    await runAction("result", "正在查询结果...", "结果查询成功", async () => {
+      const data = await getResult(selectedId);
+      setResult(JSON.stringify(data, null, 2));
+    });
   }
+
+  const isBusy = pendingAction !== null;
 
   return (
     <main className="shell">
@@ -145,6 +191,10 @@ export function App() {
         <div>
           <p className="eyebrow">Realtime Auction Core</p>
           <h1>实时竞拍控制台</h1>
+        </div>
+        <div className={`action-feedback ${feedback.tone}`} role="status" aria-live="polite">
+          <span>{feedback.tone === "idle" ? "当前状态" : "操作反馈"}</span>
+          <strong>{feedback.message}</strong>
         </div>
         <div className="status-strip">
           <span>{snapshot?.status ?? selected?.status ?? "未选择"}</span>
@@ -156,7 +206,7 @@ export function App() {
         <div className="panel manager">
           <div className="panel-head">
             <h2>主播端</h2>
-            <button onClick={handleCreate}>创建竞拍</button>
+            <ActionButton actionKey="create" label="创建竞拍" pendingLabel="创建中..." successLabel="创建成功" pendingAction={pendingAction} lastAction={lastAction} onClick={handleCreate} disabled={isBusy} />
           </div>
           <div className="form-grid">
             <label>
@@ -189,10 +239,10 @@ export function App() {
           </div>
 
           <div className="actions">
-            <button onClick={handleStart} disabled={!selectedId}>启动</button>
-            <button onClick={handleCancel} disabled={!selectedId}>取消</button>
-            <button onClick={handleFinish} disabled={!selectedId}>结算结束</button>
-            <button onClick={handleResult} disabled={!selectedId}>查看结果</button>
+            <ActionButton actionKey="start" label="启动" pendingLabel="启动中..." successLabel="已启动" pendingAction={pendingAction} lastAction={lastAction} onClick={handleStart} disabled={!selectedId || isBusy} />
+            <ActionButton actionKey="cancel" label="取消" pendingLabel="取消中..." successLabel="已取消" pendingAction={pendingAction} lastAction={lastAction} onClick={handleCancel} disabled={!selectedId || isBusy} />
+            <ActionButton actionKey="finish" label="结算结束" pendingLabel="结算中..." successLabel="已结算" pendingAction={pendingAction} lastAction={lastAction} onClick={handleFinish} disabled={!selectedId || isBusy} />
+            <ActionButton actionKey="result" label="查看结果" pendingLabel="查询中..." successLabel="已查询" pendingAction={pendingAction} lastAction={lastAction} onClick={handleResult} disabled={!selectedId || isBusy} />
           </div>
         </div>
 
@@ -207,6 +257,7 @@ export function App() {
 
           <div className="bid-grid">
             <Metric label="状态" value={snapshot?.status ?? selected?.status ?? "-"} />
+            <Metric label="倒计时" value={remainingLabel} />
             <Metric label="参与人数" value={String(snapshot?.participants ?? 0)} />
             <Metric label="我的排名" value={snapshot?.rank ? `#${snapshot.rank}` : "-"} />
             <Metric label="最低出价" value={currency(snapshot?.nextMinimumBid ?? bidAmount)} />
@@ -215,7 +266,7 @@ export function App() {
           <div className="bidline">
             <input value={userId} onChange={(e) => setUserId(e.target.value)} />
             <input type="number" value={bidAmount} onChange={(e) => setBidAmount(Number(e.target.value))} />
-            <button onClick={handleBid} disabled={!selectedId}>立即出价</button>
+            <ActionButton actionKey="bid" label="立即出价" pendingLabel="出价中..." successLabel="出价成功" pendingAction={pendingAction} lastAction={lastAction} onClick={handleBid} disabled={!selectedId || isBusy} />
           </div>
 
           <div className="timeline">
@@ -228,6 +279,36 @@ export function App() {
 
       {result && <pre className="result">{result}</pre>}
     </main>
+  );
+}
+
+// ActionButton 根据当前操作状态切换按钮文案和颜色反馈。
+function ActionButton({
+  actionKey,
+  label,
+  pendingLabel,
+  successLabel,
+  pendingAction,
+  lastAction,
+  disabled,
+  onClick
+}: {
+  actionKey: ActionKey;
+  label: string;
+  pendingLabel: string;
+  successLabel: string;
+  pendingAction: ActionKey | null;
+  lastAction: ActionKey | null;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  const isPending = pendingAction === actionKey;
+  const isSuccess = lastAction === actionKey;
+  const className = ["action-button", isPending ? "is-pending" : "", isSuccess ? "is-success" : ""].filter(Boolean).join(" ");
+  return (
+    <button className={className} onClick={onClick} disabled={disabled || isPending} aria-busy={isPending}>
+      {isPending ? pendingLabel : isSuccess ? successLabel : label}
+    </button>
   );
 }
 
@@ -254,4 +335,20 @@ function Metric({ label, value }: { label: string; value: string }) {
 // currency 统一前端金额展示格式。
 function currency(value: number) {
   return `¥${value.toLocaleString("zh-CN")}`;
+}
+
+// formatRemaining 将结束时间转换成直播间可读的倒计时文本。
+function formatRemaining(endsAt: string | undefined, now: number) {
+  if (!endsAt) {
+    return "-";
+  }
+  const remainingSeconds = Math.max(0, Math.ceil((Date.parse(endsAt) - now) / 1000));
+  const minutes = Math.floor(remainingSeconds / 60);
+  const seconds = remainingSeconds % 60;
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
+// delay 让极快完成的请求也保留短暂处理中反馈。
+function delay(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }

@@ -203,7 +203,7 @@ func (s *Server) events(w nethttp.ResponseWriter, r *nethttp.Request) {
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 
-	ch, cancel := s.service.Subscribe(auctionID)
+	ch, cancel := s.service.Subscribe(auctionID, userID)
 	defer cancel()
 	if snapshot, err := s.service.Snapshot(auctionID, userID); err == nil {
 		writeSSE(w, "snapshot", snapshot)
@@ -247,7 +247,7 @@ func (s *Server) websocketEvents(w nethttp.ResponseWriter, r *nethttp.Request) {
 
 	auctionID := r.PathValue("id")
 	userID := r.URL.Query().Get("userId")
-	ch, cancel := s.service.Subscribe(auctionID)
+	ch, cancel := s.service.Subscribe(auctionID, userID)
 	defer cancel()
 	if snapshot, err := s.service.Snapshot(auctionID, userID); err == nil {
 		if err := writeWebSocketJSON(conn, map[string]any{"type": "snapshot", "snapshot": snapshot}); err != nil {

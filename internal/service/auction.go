@@ -3,6 +3,7 @@ package service
 
 import (
 	"fmt"
+	"sync"
 	"time"
 
 	"realtime-auction-core/internal/domain/auction"
@@ -30,8 +31,8 @@ func NewAuctionService(repo repository.AuctionRepository, store redis.Store, hub
 
 // CreateAuction 创建 DRAFT 竞拍。
 func (s *AuctionService) CreateAuction(merchantID string, product auction.Product, rules auction.Rules) (auction.Auction, error) {
-	a := auction.NewAuction(merchantID, product, rules)
-	if err := a.ValidateForCreate(); err != nil {
+	a, err := auction.NewAuction(merchantID, product, rules)
+	if err != nil {
 		return auction.Auction{}, err
 	}
 	return s.repo.CreateAuction(a)
@@ -98,15 +99,18 @@ func (s *AuctionService) PlaceBid(command redis.BidCommand) (redis.BidResult, er
 	if err != nil {
 		return result, err
 	}
-	if !result.Idempotent {
-		_ = s.repo.SaveBid(auction.Bid{
-			ID:        result.BidID,
-			AuctionID: command.AuctionID,
-			UserID:    command.UserID,
-			RequestID: command.RequestID,
-			Amount:    command.Amount,
-			CreatedAt: command.Now.UTC(),
-		})
+	if result.Idempotent {
+		return result, nil
+	}
+	if err := s.repo.SaveBid(auction.Bid{
+		ID:        result.BidID,
+		AuctionID: command.AuctionID,
+		UserID:    command.UserID,
+		RequestID: command.RequestID,
+		Amount:    command.Amount,
+		CreatedAt: command.Now.UTC(),
+	}); err != nil {
+		return result, fmt.Errorf("save bid audit: %w", err)
 	}
 	if err := s.syncAuctionFromSnapshot(result.Snapshot); err != nil {
 		return result, err
@@ -154,9 +158,42 @@ func (s *AuctionService) GetResult(id string) (map[string]any, error) {
 	return result, nil
 }
 
-// Subscribe 订阅指定竞拍房间的事件。
-func (s *AuctionService) Subscribe(id string) (<-chan ws.Event, func()) {
-	return s.hub.Subscribe(id)
+// Subscribe 订阅指定用户视角的竞拍房间事件，推送前会补齐该用户自己的实时排名。
+func (s *AuctionService) Subscribe(id, userID string) (<-chan ws.Event, func()) {
+	events, cancelHub := s.hub.Subscribe(id)
+	out := make(chan ws.Event, 16)
+	done := make(chan struct{})
+	var once sync.Once
+
+	go func() {
+		defer close(out)
+		for {
+			select {
+			case <-done:
+				return
+			case event, ok := <-events:
+				if !ok {
+					return
+				}
+				if snapshot, err := s.store.Snapshot(id, userID); err == nil {
+					event.Snapshot = snapshot
+				}
+				select {
+				case out <- event:
+				case <-done:
+					return
+				}
+			}
+		}
+	}()
+
+	cancel := func() {
+		once.Do(func() {
+			close(done)
+			cancelHub()
+		})
+	}
+	return out, cancel
 }
 
 // syncAuctionFromSnapshot 将实时快照收敛回 repository，并在 SOLD 时触发结算。

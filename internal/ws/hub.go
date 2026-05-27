@@ -12,13 +12,13 @@ type EventType string
 
 const (
 	// EventSnapshot 表示用户入房或状态刷新。
-	EventSnapshot       EventType = "snapshot"
+	EventSnapshot EventType = "snapshot"
 	// EventBidAccepted 表示有效出价已被接受。
-	EventBidAccepted    EventType = "bidAccepted"
+	EventBidAccepted EventType = "bidAccepted"
 	// EventAuctionExtended 表示竞拍被自动延时。
 	EventAuctionExtended EventType = "auctionExtended"
 	// EventAuctionEnded 表示竞拍成交或自然结束。
-	EventAuctionEnded    EventType = "auctionEnded"
+	EventAuctionEnded EventType = "auctionEnded"
 	// EventAuctionCancelled 表示竞拍被商家取消。
 	EventAuctionCancelled EventType = "auctionCancelled"
 )

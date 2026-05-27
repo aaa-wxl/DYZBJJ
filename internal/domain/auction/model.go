@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -12,17 +13,17 @@ type Status string
 
 const (
 	// StatusDraft 表示竞拍已创建但尚未开始。
-	StatusDraft     Status = "DRAFT"
+	StatusDraft Status = "DRAFT"
 	// StatusScheduled 表示竞拍已排期，后续可按计划启动。
 	StatusScheduled Status = "SCHEDULED"
 	// StatusRunning 表示竞拍正在接受出价。
-	StatusRunning   Status = "RUNNING"
+	StatusRunning Status = "RUNNING"
 	// StatusExtended 表示竞拍因临近结束出价被自动延时。
-	StatusExtended  Status = "EXTENDED"
+	StatusExtended Status = "EXTENDED"
 	// StatusSold 表示竞拍已成交。
-	StatusSold      Status = "SOLD"
+	StatusSold Status = "SOLD"
 	// StatusEnded 表示竞拍自然结束但没有成交。
-	StatusEnded     Status = "ENDED"
+	StatusEnded Status = "ENDED"
 	// StatusCancelled 表示竞拍被商家异常取消。
 	StatusCancelled Status = "CANCELLED"
 )
@@ -30,6 +31,7 @@ const (
 var (
 	ErrInvalidRules      = errors.New("invalid auction rules")
 	ErrInvalidTransition = errors.New("invalid auction state transition")
+	idCounter            uint64
 )
 
 type Product struct {
@@ -127,19 +129,23 @@ type Order struct {
 	CreatedAt   time.Time `json:"createdAt"`
 }
 
-// NewAuction 创建初始 DRAFT 竞拍。
-func NewAuction(merchantID string, product Product, rules Rules) Auction {
-	now := time.Now().UTC()
-	return Auction{
-		ID:           NewID("auc"),
+// NewAuction 创建并校验初始 DRAFT 竞拍。
+func NewAuction(merchantID string, product Product, rules Rules) (Auction, error) {
+	a := Auction{
 		MerchantID:   merchantID,
 		Product:      product,
 		Rules:        rules,
 		Status:       StatusDraft,
 		CurrentPrice: rules.StartPrice,
-		CreatedAt:    now,
-		UpdatedAt:    now,
 	}
+	if err := a.ValidateForCreate(); err != nil {
+		return Auction{}, err
+	}
+	now := time.Now().UTC()
+	a.ID = NewID("auc")
+	a.CreatedAt = now
+	a.UpdatedAt = now
+	return a, nil
 }
 
 // ValidateForCreate 校验创建竞拍时必须具备的商家、商品和规则信息。
@@ -228,7 +234,8 @@ func NextMinimumBid(current int64, rules Rules) int64 {
 	return next
 }
 
-// NewID 生成演示用唯一 ID；生产环境应替换为稳定 ID 生成器。
+// NewID 生成演示用唯一 ID；时间戳叠加原子序号，避免高频创建时发生碰撞。
 func NewID(prefix string) string {
-	return fmt.Sprintf("%s-%d", prefix, time.Now().UTC().UnixNano())
+	seq := atomic.AddUint64(&idCounter, 1)
+	return fmt.Sprintf("%s-%d-%d", prefix, time.Now().UTC().UnixNano(), seq)
 }

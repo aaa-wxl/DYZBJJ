@@ -8,6 +8,7 @@
   --gold: #d7a84b;
   --red: #d9543f;
   --green: #66c18c;
+  --blue: #6ca8d9;
   --ink: #12110f;
 }
 
@@ -36,11 +37,16 @@ button {
   padding: 0 14px;
   cursor: pointer;
   font-weight: 700;
+  transition: background 160ms ease, border-color 160ms ease, color 160ms ease, transform 160ms ease, box-shadow 160ms ease;
 }
 
 button:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+button:not(:disabled):active {
+  transform: translateY(1px);
 }
 
 input,
@@ -100,6 +106,42 @@ h1 {
   padding: 12px 16px;
   min-width: 180px;
   background: rgba(29, 27, 23, 0.86);
+}
+
+.action-feedback {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 14px;
+  min-width: 220px;
+  background: #11100e;
+}
+
+.action-feedback span {
+  display: block;
+  color: #b8ad9c;
+  font-size: 12px;
+}
+
+.action-feedback strong {
+  display: block;
+  margin-top: 4px;
+  color: #f4f1e8;
+  font-size: 15px;
+}
+
+.action-feedback.pending {
+  border-color: var(--blue);
+  box-shadow: inset 4px 0 0 var(--blue);
+}
+
+.action-feedback.success {
+  border-color: var(--green);
+  box-shadow: inset 4px 0 0 var(--green);
+}
+
+.action-feedback.error {
+  border-color: var(--red);
+  box-shadow: inset 4px 0 0 var(--red);
 }
 
 .status-strip span,
@@ -194,6 +236,24 @@ label {
 .actions button {
   background: transparent;
   color: var(--gold);
+}
+
+.action-button.is-pending,
+.actions .action-button.is-pending {
+  opacity: 1;
+  border-color: var(--blue);
+  background: rgba(108, 168, 217, 0.18);
+  color: #b9def7;
+  box-shadow: 0 0 0 3px rgba(108, 168, 217, 0.12);
+}
+
+.action-button.is-success,
+.actions .action-button.is-success {
+  opacity: 1;
+  border-color: var(--green);
+  background: rgba(102, 193, 140, 0.18);
+  color: #b8efcc;
+  box-shadow: 0 0 0 3px rgba(102, 193, 140, 0.12);
 }
 
 .video-stage {
