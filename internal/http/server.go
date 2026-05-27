@@ -328,6 +328,10 @@ func bearerToken(r *nethttp.Request) string {
 }
 
 func writeAuthError(w nethttp.ResponseWriter, err error) {
+	if errors.Is(err, service.ErrAuthStorage) {
+		writeAPIError(w, nethttp.StatusInternalServerError, "AUTH_STORAGE_ERROR", "登录状态保存失败", nil)
+		return
+	}
 	if errors.Is(err, service.ErrForbidden) {
 		writeAPIError(w, nethttp.StatusForbidden, "FORBIDDEN", "当前用户无权执行该操作", nil)
 		return

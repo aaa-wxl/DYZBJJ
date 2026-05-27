@@ -228,7 +228,8 @@ func (r *FileRepository) save(name string, value any) error {
 		return err
 	}
 	if err := os.Rename(tmpPath, path); err != nil {
-		return err
+		// 部分受限 Windows 环境会禁止 rename/delete，demo 环境降级为直接写正式文件。
+		return os.WriteFile(path, data, 0o644)
 	}
 	return nil
 }
