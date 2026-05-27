@@ -4,124 +4,131 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"realtime-auction-core/internal/domain/auction"
 	"realtime-auction-core/internal/repository"
 )
 
-func TestAuthLoginAndRequireBidder(t *testing.T) {
-	auth := NewAuthService(repository.NewMemoryRepository())
+func TestAuthSeedsDemoUsersAndLogsInWithJWT(t *testing.T) {
+	repo := repository.NewMemoryRepository()
+	auth := NewAuthService(repo, "demo-secret", 24*time.Hour)
+	if err := auth.SeedDemoUsers(); err != nil {
+		t.Fatalf("SeedDemoUsers() error = %v", err)
+	}
 
-	session, err := auth.Login("李四", auction.RoleBidder)
+	session, err := auth.Login("userA", "123456")
 	if err != nil {
 		t.Fatalf("Login() error = %v", err)
 	}
 	if session.Token == "" {
 		t.Fatal("Login() returned empty token")
 	}
-	if session.User.Name != "李四" {
-		t.Fatalf("Login() user name = %q, want %q", session.User.Name, "李四")
-	}
-	if session.User.Role != auction.RoleBidder {
-		t.Fatalf("Login() user role = %q, want %q", session.User.Role, auction.RoleBidder)
+	if session.User.ID != "usr-user-a" || session.User.DisplayName != "用户A" || session.User.Role != auction.RoleBidder {
+		t.Fatalf("Login() user = %+v", session.User)
 	}
 
 	user, err := auth.Require(session.Token, auction.RoleBidder)
 	if err != nil {
 		t.Fatalf("Require() error = %v", err)
 	}
-	if user != session.User {
-		t.Fatalf("Require() user = %+v, want %+v", user, session.User)
+	if user.ID != "usr-user-a" {
+		t.Fatalf("Require() user id = %s, want usr-user-a", user.ID)
+	}
+}
+
+func TestAuthLoginRejectsWrongPassword(t *testing.T) {
+	auth := NewAuthService(repository.NewMemoryRepository(), "demo-secret", time.Hour)
+	if err := auth.SeedDemoUsers(); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := auth.Login("userA", "bad-password"); !errors.Is(err, ErrInvalidCredentials) {
+		t.Fatalf("Login() error = %v, want %v", err, ErrInvalidCredentials)
 	}
 }
 
 func TestAuthRequireRejectsWrongRole(t *testing.T) {
-	auth := NewAuthService(repository.NewMemoryRepository())
-	session, err := auth.Login("李四", auction.RoleBidder)
+	auth := NewAuthService(repository.NewMemoryRepository(), "demo-secret", time.Hour)
+	if err := auth.SeedDemoUsers(); err != nil {
+		t.Fatal(err)
+	}
+	session, err := auth.Login("userA", "123456")
 	if err != nil {
-		t.Fatalf("Login() error = %v", err)
+		t.Fatal(err)
 	}
 
 	if _, err := auth.Require(session.Token, auction.RoleAdmin); !errors.Is(err, ErrForbidden) {
-		t.Fatalf("Require() error = %v, want %v", err, ErrForbidden)
+		t.Fatalf("Require(admin) error = %v, want %v", err, ErrForbidden)
 	}
 }
 
-func TestAuthKeepsSeparateUsersForFastLogins(t *testing.T) {
-	auth := NewAuthService(repository.NewMemoryRepository())
-	admin, err := auth.Login("admin", auction.RoleAdmin)
+func TestAuthRequireRejectsExpiredJWT(t *testing.T) {
+	auth := NewAuthService(repository.NewMemoryRepository(), "demo-secret", -time.Second)
+	if err := auth.SeedDemoUsers(); err != nil {
+		t.Fatal(err)
+	}
+	session, err := auth.Login("userA", "123456")
 	if err != nil {
-		t.Fatalf("admin login: %v", err)
+		t.Fatal(err)
 	}
-	bidder, err := auth.Login("bidder", auction.RoleBidder)
+
+	if _, err := auth.Require(session.Token, auction.RoleBidder); !errors.Is(err, ErrTokenExpired) {
+		t.Fatalf("Require(expired) error = %v, want %v", err, ErrTokenExpired)
+	}
+}
+
+func TestAuthLoginRejectsDisabledUser(t *testing.T) {
+	repo := repository.NewMemoryRepository()
+	auth := NewAuthService(repo, "demo-secret", time.Hour)
+	if err := auth.SeedDemoUsers(); err != nil {
+		t.Fatal(err)
+	}
+	user, err := repo.GetUserByUsername("userA")
 	if err != nil {
-		t.Fatalf("bidder login: %v", err)
+		t.Fatal(err)
 	}
-	if admin.User.ID == bidder.User.ID {
-		t.Fatalf("users share id %q", admin.User.ID)
+	user.Status = auction.UserDisabled
+	if err := repo.UpsertUser(user); err != nil {
+		t.Fatal(err)
 	}
-	user, err := auth.Require(admin.Token, auction.RoleAdmin)
-	if err != nil {
-		t.Fatalf("require admin: %v", err)
-	}
-	if user.Role != auction.RoleAdmin {
-		t.Fatalf("admin token resolved to role %s", user.Role)
+
+	if _, err := auth.Login("userA", "123456"); !errors.Is(err, ErrUserDisabled) {
+		t.Fatalf("Login(disabled) error = %v, want %v", err, ErrUserDisabled)
 	}
 }
 
-func TestAuthLoginRejectsEmptyName(t *testing.T) {
-	auth := NewAuthService(repository.NewMemoryRepository())
-
-	if _, err := auth.Login("  ", auction.RoleBidder); !errors.Is(err, ErrUnauthorized) {
-		t.Fatalf("Login(empty) error = %v, want %v", err, ErrUnauthorized)
-	}
-}
-
-func TestAuthLoginRejectsInvalidRole(t *testing.T) {
-	auth := NewAuthService(repository.NewMemoryRepository())
-
-	if _, err := auth.Login("李四", auction.Role("GUEST")); !errors.Is(err, ErrForbidden) {
-		t.Fatalf("Login(invalid role) error = %v, want %v", err, ErrForbidden)
-	}
-}
-
-func TestAuthLoginHidesStorageErrors(t *testing.T) {
-	const sensitivePath = `C:\secret\auth.json`
-
-	tests := []struct {
-		name     string
-		saveUser error
-		saveSess error
-	}{
-		{name: "save user", saveUser: errors.New("open " + sensitivePath + ": access denied")},
-		{name: "save session", saveSess: errors.New("write " + sensitivePath + ": access denied")},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			auth := NewAuthService(&authRepoStub{
-				saveUserErr:    tt.saveUser,
-				saveSessionErr: tt.saveSess,
-			})
-
-			_, err := auth.Login("alice", auction.RoleBidder)
-			if !errors.Is(err, ErrAuthStorage) {
-				t.Fatalf("Login() error = %v, want %v", err, ErrAuthStorage)
-			}
-			if strings.Contains(err.Error(), sensitivePath) {
-				t.Fatalf("Login() error = %q, must not contain path %q", err.Error(), sensitivePath)
-			}
-		})
-	}
-}
-
-func TestAuthRequireHidesTokenLookupErrors(t *testing.T) {
-	const storageDetail = `open C:\secret\sessions.json: access denied`
+func TestAuthSeedHidesStorageErrors(t *testing.T) {
+	const sensitivePath = `C:\secret\users.json`
 	auth := NewAuthService(&authRepoStub{
-		getUserErr: errors.New(storageDetail),
-	})
+		upsertUserErr: errors.New("open " + sensitivePath + ": access denied"),
+	}, "demo-secret", time.Hour)
 
-	_, err := auth.Require("token", auction.RoleBidder)
+	err := auth.SeedDemoUsers()
+	if !errors.Is(err, ErrAuthStorage) {
+		t.Fatalf("SeedDemoUsers() error = %v, want %v", err, ErrAuthStorage)
+	}
+	if strings.Contains(err.Error(), sensitivePath) {
+		t.Fatalf("SeedDemoUsers() error = %q, must not contain path %q", err.Error(), sensitivePath)
+	}
+}
+
+func TestAuthRequireHidesUserLookupErrors(t *testing.T) {
+	const storageDetail = `open C:\secret\users.json: access denied`
+	repo := repository.NewMemoryRepository()
+	auth := NewAuthService(repo, "demo-secret", time.Hour)
+	if err := auth.SeedDemoUsers(); err != nil {
+		t.Fatal(err)
+	}
+	session, err := auth.Login("userA", "123456")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	broken := NewAuthService(&authRepoStub{
+		getUserErr: errors.New(storageDetail),
+	}, "demo-secret", time.Hour)
+	_, err = broken.Require(session.Token, auction.RoleBidder)
 	if !errors.Is(err, ErrUnauthorized) {
 		t.Fatalf("Require() error = %v, want %v", err, ErrUnauthorized)
 	}
@@ -131,18 +138,21 @@ func TestAuthRequireHidesTokenLookupErrors(t *testing.T) {
 }
 
 type authRepoStub struct {
-	saveUserErr    error
-	saveSessionErr error
-	getUser        auction.User
-	getUserErr     error
+	upsertUserErr error
+	getUser       auction.User
+	getUserErr    error
 }
 
-func (r *authRepoStub) SaveUser(auction.User) error {
-	return r.saveUserErr
+func (r *authRepoStub) SaveUser(user auction.User) error {
+	return r.UpsertUser(user)
+}
+
+func (r *authRepoStub) UpsertUser(auction.User) error {
+	return r.upsertUserErr
 }
 
 func (r *authRepoStub) SaveSession(auction.Session) error {
-	return r.saveSessionErr
+	return nil
 }
 
 func (r *authRepoStub) GetUserByToken(string) (auction.User, error) {
@@ -151,6 +161,14 @@ func (r *authRepoStub) GetUserByToken(string) (auction.User, error) {
 
 func (r *authRepoStub) GetUser(string) (auction.User, error) {
 	return r.getUser, r.getUserErr
+}
+
+func (r *authRepoStub) GetUserByUsername(string) (auction.User, error) {
+	return r.getUser, r.getUserErr
+}
+
+func (r *authRepoStub) ListUsers() ([]auction.User, error) {
+	return nil, nil
 }
 
 func (r *authRepoStub) CreateAuction(a auction.Auction) (auction.Auction, error) {

@@ -52,8 +52,8 @@ func (s *Server) routes() {
 }
 
 type loginRequest struct {
-	Name string       `json:"name"`
-	Role auction.Role `json:"role"`
+	Username string `json:"username"`
+	Password string `json:"password"`
 }
 
 func (s *Server) login(w nethttp.ResponseWriter, r *nethttp.Request) {
@@ -62,7 +62,7 @@ func (s *Server) login(w nethttp.ResponseWriter, r *nethttp.Request) {
 		writeAPIError(w, nethttp.StatusBadRequest, "BAD_REQUEST", "请求体格式错误", nil)
 		return
 	}
-	session, err := s.auth.Login(req.Name, req.Role)
+	session, err := s.auth.Login(req.Username, req.Password)
 	if err != nil {
 		writeAuthError(w, err)
 		return
@@ -191,7 +191,7 @@ func (s *Server) placeBid(w nethttp.ResponseWriter, r *nethttp.Request) {
 	result, err := s.auction.PlaceBid(redis.BidCommand{
 		AuctionID: r.PathValue("id"),
 		UserID:    user.ID,
-		UserName:  user.Name,
+		UserName:  user.DisplayName,
 		RequestID: req.RequestID,
 		Amount:    req.Amount,
 		Now:       time.Now().UTC(),

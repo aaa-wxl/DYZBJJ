@@ -209,7 +209,7 @@ func actorMeta(actor auction.User) map[string]string {
 	if actor.ID == "" {
 		return nil
 	}
-	return map[string]string{"actorId": actor.ID, "actorName": actor.Name}
+	return map[string]string{"actorId": actor.ID, "actorName": actor.DisplayName}
 }
 
 func bidMeta(command redis.BidCommand) map[string]string {

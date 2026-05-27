@@ -21,7 +21,10 @@ func main() {
 	store := redis.NewMemoryStore()
 	hub := ws.NewHub()
 	auctionService := service.NewAuctionService(repo, store, hub)
-	authService := service.NewAuthService(repo)
+	authService := service.NewAuthService(repo, cfg.JWTSecret, cfg.JWTTTL)
+	if err := authService.SeedDemoUsers(); err != nil {
+		log.Fatal(err)
+	}
 	server := apphttp.NewServer(auctionService, authService)
 
 	log.Printf("auction api listening on %s", cfg.HTTPAddr)

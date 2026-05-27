@@ -16,20 +16,30 @@ import (
 	"realtime-auction-core/internal/ws"
 )
 
-func TestLoginAndRoleProtectedAdminCreate(t *testing.T) {
+func TestLoginWithPasswordAndRoleProtectedAdminCreate(t *testing.T) {
 	ts := newHTTPTestServer(t)
 	defer ts.Close()
 
-	bidder := loginAs(t, ts, "用户A", auction.RoleBidder)
+	bidder := loginWithPassword(t, ts, "userA", "123456", auction.RoleBidder)
 	blocked := postJSON(t, ts, "/api/admin/auctions", validCreatePayload(), bidder.Token)
 	if blocked.Code != nethttp.StatusForbidden {
 		t.Fatalf("bidder admin create status = %d body=%s", blocked.Code, blocked.Body.String())
 	}
 
-	admin := loginAs(t, ts, "管理员", auction.RoleAdmin)
+	admin := loginWithPassword(t, ts, "admin", "admin123", auction.RoleAdmin)
 	created := postJSON(t, ts, "/api/admin/auctions", validCreatePayload(), admin.Token)
 	if created.Code != nethttp.StatusCreated {
 		t.Fatalf("admin create status = %d body=%s", created.Code, created.Body.String())
+	}
+}
+
+func TestLoginRejectsWrongPassword(t *testing.T) {
+	ts := newHTTPTestServer(t)
+	defer ts.Close()
+
+	res := postJSON(t, ts, "/api/login", map[string]any{"username": "userA", "password": "bad-password"}, "")
+	if res.Code != nethttp.StatusUnauthorized {
+		t.Fatalf("login status = %d body=%s", res.Code, res.Body.String())
 	}
 }
 
@@ -37,8 +47,8 @@ func TestBidStepErrorReturnsStructuredBody(t *testing.T) {
 	ts := newHTTPTestServer(t)
 	defer ts.Close()
 
-	admin := loginAs(t, ts, "管理员", auction.RoleAdmin)
-	bidder := loginAs(t, ts, "用户A", auction.RoleBidder)
+	admin := loginWithPassword(t, ts, "admin", "admin123", auction.RoleAdmin)
+	bidder := loginWithPassword(t, ts, "userA", "123456", auction.RoleBidder)
 	created := postJSON(t, ts, "/api/admin/auctions", validCreatePayload(), admin.Token)
 	if created.Code != nethttp.StatusCreated {
 		t.Fatalf("create status = %d body=%s", created.Code, created.Body.String())
@@ -74,8 +84,8 @@ func TestBidUsesAuthenticatedUser(t *testing.T) {
 	ts := newHTTPTestServer(t)
 	defer ts.Close()
 
-	admin := loginAs(t, ts, "管理员", auction.RoleAdmin)
-	bidder := loginAs(t, ts, "用户A", auction.RoleBidder)
+	admin := loginWithPassword(t, ts, "admin", "admin123", auction.RoleAdmin)
+	bidder := loginWithPassword(t, ts, "userA", "123456", auction.RoleBidder)
 	created := postJSON(t, ts, "/api/admin/auctions", validCreatePayload(), admin.Token)
 	if created.Code != nethttp.StatusCreated {
 		t.Fatalf("create status = %d body=%s", created.Code, created.Body.String())
@@ -110,13 +120,16 @@ func newHTTPTestServer(t *testing.T) *httptest.Server {
 	store := redis.NewMemoryStore()
 	hub := ws.NewHub()
 	auctionService := service.NewAuctionService(repo, store, hub)
-	authService := service.NewAuthService(repo)
+	authService := service.NewAuthService(repo, "test-secret", 24*time.Hour)
+	if err := authService.SeedDemoUsers(); err != nil {
+		t.Fatal(err)
+	}
 	return httptest.NewServer(NewServer(auctionService, authService).Handler())
 }
 
-func loginAs(t *testing.T, ts *httptest.Server, name string, role auction.Role) service.LoginSession {
+func loginWithPassword(t *testing.T, ts *httptest.Server, username, password string, role auction.Role) service.LoginSession {
 	t.Helper()
-	res := postJSON(t, ts, "/api/login", map[string]any{"name": name, "role": role}, "")
+	res := postJSON(t, ts, "/api/login", map[string]any{"username": username, "password": password}, "")
 	if res.Code != nethttp.StatusOK {
 		t.Fatalf("login status = %d body=%s", res.Code, res.Body.String())
 	}
@@ -124,6 +137,9 @@ func loginAs(t *testing.T, ts *httptest.Server, name string, role auction.Role) 
 	decodeBody(t, res.Body.Bytes(), &session)
 	if session.User.Role != role {
 		t.Fatalf("login role = %s, want %s body=%s", session.User.Role, role, res.Body.String())
+	}
+	if session.User.Username != username {
+		t.Fatalf("login username = %s, want %s", session.User.Username, username)
 	}
 	return session
 }
