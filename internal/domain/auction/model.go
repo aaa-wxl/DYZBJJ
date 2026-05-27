@@ -123,17 +123,25 @@ type Auction struct {
 
 // Snapshot 是实时房间对外暴露的竞拍快照。
 type Snapshot struct {
-	AuctionID      string    `json:"auctionId"`
-	Product        Product   `json:"product"`
-	Rules          Rules     `json:"rules"`
-	Status         Status    `json:"status"`
-	CurrentPrice   int64     `json:"currentPrice"`
-	HighestBidder  string    `json:"highestBidder,omitempty"`
-	EndsAt         time.Time `json:"endsAt"`
-	ServerTime     time.Time `json:"serverTime"`
-	Rank           int       `json:"rank,omitempty"`
-	Participants   int       `json:"participants"`
-	NextMinimumBid int64     `json:"nextMinimumBid"`
+	AuctionID      string             `json:"auctionId"`
+	Product        Product            `json:"product"`
+	Rules          Rules              `json:"rules"`
+	Status         Status             `json:"status"`
+	CurrentPrice   int64              `json:"currentPrice"`
+	HighestBidder  string             `json:"highestBidder,omitempty"`
+	EndsAt         time.Time          `json:"endsAt"`
+	ServerTime     time.Time          `json:"serverTime"`
+	Rank           int                `json:"rank,omitempty"`
+	Participants   int                `json:"participants"`
+	NextMinimumBid int64              `json:"nextMinimumBid"`
+	Leaderboard    []LeaderboardEntry `json:"leaderboard"`
+}
+
+type LeaderboardEntry struct {
+	Rank        int    `json:"rank"`
+	UserID      string `json:"userId"`
+	DisplayName string `json:"displayName"`
+	Amount      int64  `json:"amount"`
 }
 
 // Bid 记录一笔已接受的出价流水。

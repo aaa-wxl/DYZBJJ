@@ -72,6 +72,7 @@ func (s *AuctionService) StartAuctionBy(id string, now time.Time, actor auction.
 	if err := s.store.InitAuction(snapshot); err != nil {
 		return auction.Snapshot{}, err
 	}
+	snapshot = s.enrichLeaderboard(snapshot)
 	s.scheduleFinish(id, snapshot.EndsAt)
 	s.hub.Broadcast(ws.Event{Type: ws.EventSnapshot, AuctionID: id, Snapshot: snapshot, Meta: actorMeta(actor)})
 	return snapshot, nil
@@ -98,6 +99,7 @@ func (s *AuctionService) CancelAuctionBy(id string, now time.Time, actor auction
 	if err != nil {
 		snapshot = a.ToSnapshot(now)
 	}
+	snapshot = s.enrichLeaderboard(snapshot)
 	s.stopFinishTimer(id)
 	s.hub.Broadcast(ws.Event{Type: ws.EventAuctionCancelled, AuctionID: id, Snapshot: snapshot, Reason: "merchant_cancelled", Meta: actorMeta(actor)})
 	return snapshot, nil
@@ -105,7 +107,11 @@ func (s *AuctionService) CancelAuctionBy(id string, now time.Time, actor auction
 
 // Snapshot 返回用户进入或重连房间时的最新状态。
 func (s *AuctionService) Snapshot(id, userID string) (auction.Snapshot, error) {
-	return s.store.Snapshot(id, userID)
+	snapshot, err := s.store.Snapshot(id, userID)
+	if err != nil {
+		return auction.Snapshot{}, err
+	}
+	return s.enrichLeaderboard(snapshot), nil
 }
 
 // PlaceBid 处理用户出价，并在状态变化后广播事件。
@@ -129,6 +135,7 @@ func (s *AuctionService) PlaceBid(command redis.BidCommand) (redis.BidResult, er
 	if err := s.syncAuctionFromSnapshot(result.Snapshot); err != nil {
 		return result, err
 	}
+	result.Snapshot = s.enrichLeaderboard(result.Snapshot)
 
 	eventType := ws.EventBidAccepted
 	reason := ""
@@ -155,6 +162,7 @@ func (s *AuctionService) FinishExpired(id string, now time.Time) (auction.Snapsh
 	if err := s.syncAuctionFromSnapshot(snapshot); err != nil {
 		return auction.Snapshot{}, err
 	}
+	snapshot = s.enrichLeaderboard(snapshot)
 	s.stopFinishTimer(id)
 	s.hub.Broadcast(ws.Event{Type: ws.EventAuctionEnded, AuctionID: id, Snapshot: snapshot, Reason: "time_expired"})
 	return snapshot, nil
@@ -210,6 +218,18 @@ func actorMeta(actor auction.User) map[string]string {
 		return nil
 	}
 	return map[string]string{"actorId": actor.ID, "actorName": actor.DisplayName}
+}
+
+func (s *AuctionService) enrichLeaderboard(snapshot auction.Snapshot) auction.Snapshot {
+	for i := range snapshot.Leaderboard {
+		user, err := s.repo.GetUser(snapshot.Leaderboard[i].UserID)
+		if err == nil && user.DisplayName != "" {
+			snapshot.Leaderboard[i].DisplayName = user.DisplayName
+			continue
+		}
+		snapshot.Leaderboard[i].DisplayName = snapshot.Leaderboard[i].UserID
+	}
+	return snapshot
 }
 
 func bidMeta(command redis.BidCommand) map[string]string {

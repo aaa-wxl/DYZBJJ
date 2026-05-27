@@ -2,6 +2,7 @@
 package redis
 
 import (
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -43,6 +44,75 @@ func TestStorePlaceBidRejectsLowBid(t *testing.T) {
 	}
 	if result.NextMinimum != 150 {
 		t.Fatalf("next minimum = %d, want 150", result.NextMinimum)
+	}
+}
+
+func TestStoreSnapshotIncludesTopFiveLeaderboardAndRank(t *testing.T) {
+	store := NewMemoryStore()
+	now := time.Unix(100, 0).UTC()
+	if err := store.InitAuction(auction.Snapshot{
+		AuctionID:      "auction-1",
+		Status:         auction.StatusRunning,
+		CurrentPrice:   0,
+		EndsAt:         now.Add(time.Minute),
+		ServerTime:     now,
+		NextMinimumBid: 100,
+		Rules: auction.Rules{
+			StartPrice:   0,
+			Increment:    100,
+			Duration:     time.Minute,
+			CeilingPrice: 2000,
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for i, bid := range []struct {
+		user   string
+		amount int64
+	}{
+		{"usr-user-a", 100},
+		{"usr-user-b", 200},
+		{"usr-user-c", 300},
+		{"usr-user-d", 400},
+		{"usr-user-e", 500},
+		{"usr-user-f", 600},
+	} {
+		_, err := store.PlaceBid(BidCommand{
+			AuctionID: "auction-1",
+			UserID:    bid.user,
+			RequestID: fmt.Sprintf("req-%d", i),
+			Amount:    bid.amount,
+			Now:       now.Add(time.Duration(i) * time.Second),
+		})
+		if err != nil {
+			t.Fatalf("PlaceBid(%s) error = %v", bid.user, err)
+		}
+	}
+	snapshot, err := store.Snapshot("auction-1", "usr-user-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshot.Leaderboard) != 5 {
+		t.Fatalf("leaderboard len = %d, want 5: %+v", len(snapshot.Leaderboard), snapshot.Leaderboard)
+	}
+	if snapshot.Leaderboard[0].UserID != "usr-user-f" || snapshot.Leaderboard[0].Amount != 600 {
+		t.Fatalf("leaderboard[0] = %+v", snapshot.Leaderboard[0])
+	}
+	if snapshot.Rank != 6 {
+		t.Fatalf("rank = %d, want 6", snapshot.Rank)
+	}
+}
+
+func TestStoreLeaderboardKeepsEarlierBidFirstOnTie(t *testing.T) {
+	snapshot := snapshotWithRank(auction.Snapshot{AuctionID: "auction-1"}, map[string]rankingEntry{
+		"usr-user-a": {Amount: 100, Seq: 1},
+		"usr-user-b": {Amount: 100, Seq: 2},
+	}, "usr-user-b")
+	if snapshot.Leaderboard[0].UserID != "usr-user-a" || snapshot.Leaderboard[1].UserID != "usr-user-b" {
+		t.Fatalf("leaderboard tie order = %+v", snapshot.Leaderboard)
+	}
+	if snapshot.Rank != 2 {
+		t.Fatalf("rank = %d, want 2", snapshot.Rank)
 	}
 }
 

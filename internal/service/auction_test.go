@@ -170,6 +170,49 @@ func TestPlaceBidReturnsAuditSaveError(t *testing.T) {
 	}
 }
 
+func TestAuctionSnapshotEnrichesLeaderboardDisplayNames(t *testing.T) {
+	repo := repository.NewMemoryRepository()
+	now := time.Now().UTC()
+	if err := repo.UpsertUser(auction.User{
+		ID:          "usr-user-a",
+		Username:    "userA",
+		DisplayName: "用户A",
+		Role:        auction.RoleBidder,
+		Status:      auction.UserActive,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	svc := NewAuctionService(repo, redis.NewMemoryStore(), ws.NewHub())
+	a, err := svc.CreateAuction("merchant", auction.Product{Name: "Lot"}, auction.Rules{
+		StartPrice:   0,
+		Increment:    100,
+		Duration:     time.Minute,
+		CeilingPrice: 1000,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	started, err := svc.StartAuction(a.ID, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := svc.PlaceBid(redis.BidCommand{
+		AuctionID: a.ID,
+		UserID:    "usr-user-a",
+		RequestID: "req-a",
+		Amount:    100,
+		Now:       started.ServerTime.Add(time.Second),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Snapshot.Leaderboard) != 1 || result.Snapshot.Leaderboard[0].DisplayName != "用户A" {
+		t.Fatalf("leaderboard = %+v", result.Snapshot.Leaderboard)
+	}
+}
+
 func newAuctionServiceFixture(t *testing.T, rules auction.Rules) (*repository.MemoryRepository, *redis.MemoryStore, *AuctionService, auction.Auction) {
 	t.Helper()
 	repo := repository.NewMemoryRepository()
