@@ -7,17 +7,31 @@ func AuctionSnapshotKey(auctionID string) string {
 	return fmt.Sprintf("auction:%s:snapshot", auctionID)
 }
 
-// AuctionRankKey 保存单个竞拍房间的排行榜数据。
 func AuctionRankKey(auctionID string) string {
-	return fmt.Sprintf("auction:%s:rank", auctionID)
+	return fmt.Sprintf("auction:%s:ranking", auctionID)
 }
 
-// AuctionRequestKey 保存出价 requestId 的幂等处理结果。
+func AuctionAmountKey(auctionID string) string {
+	return fmt.Sprintf("auction:%s:amounts", auctionID)
+}
+
+func AuctionRankSeqKey(auctionID string) string {
+	return fmt.Sprintf("auction:%s:rank_seq", auctionID)
+}
+
+func AuctionSeqKey(auctionID string) string {
+	return fmt.Sprintf("auction:%s:seq", auctionID)
+}
+
 func AuctionRequestKey(auctionID, requestID string) string {
-	return fmt.Sprintf("auction:%s:req:%s", auctionID, requestID)
+	return fmt.Sprintf("auction:%s:request:%s", auctionID, requestID)
 }
 
-// AuctionRoomKey 表示竞拍房间事件通道。
+func AuctionEventsKey(auctionID string) string {
+	return fmt.Sprintf("auction:%s:events", auctionID)
+}
+
+// AuctionRoomKey 兼容旧的房间命名调用；新事件通道使用 AuctionEventsKey。
 func AuctionRoomKey(auctionID string) string {
-	return fmt.Sprintf("auction:%s:room", auctionID)
+	return AuctionEventsKey(auctionID)
 }
