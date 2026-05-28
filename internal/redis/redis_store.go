@@ -78,6 +78,63 @@ func (s *RedisStore) Snapshot(auctionID, userID string) (auction.Snapshot, error
 	return snapshot, nil
 }
 
+type bidScriptResult struct {
+	OK               bool           `json:"ok"`
+	Error            string         `json:"error"`
+	BidID            string         `json:"bidId"`
+	Idempotent       bool           `json:"idempotent"`
+	Extended         bool           `json:"extended"`
+	Status           auction.Status `json:"status"`
+	CurrentPrice     int64          `json:"currentPrice"`
+	HighestBidder    string         `json:"highestBidder"`
+	EndsAtUnixMs     int64          `json:"endsAtUnixMs"`
+	ServerTimeUnixMs int64          `json:"serverTimeUnixMs"`
+	NextMinimum      int64          `json:"nextMinimum"`
+}
+
+func (s *RedisStore) PlaceBid(command BidCommand) (BidResult, error) {
+	if command.UserID == "" || command.RequestID == "" {
+		return BidResult{}, fmt.Errorf("%w: user id and request id are required", ErrBidRejected)
+	}
+	if command.Now.IsZero() {
+		command.Now = time.Now().UTC()
+	}
+
+	ctx := context.Background()
+	bidID := auction.NewID("bid")
+	raw, err := s.client.Eval(ctx, placeBidScript, []string{
+		AuctionSnapshotKey(command.AuctionID),
+		AuctionRankKey(command.AuctionID),
+		AuctionAmountKey(command.AuctionID),
+		AuctionRankSeqKey(command.AuctionID),
+		AuctionSeqKey(command.AuctionID),
+		AuctionRequestKey(command.AuctionID, command.RequestID),
+	}, command.AuctionID, command.UserID, command.RequestID, command.Amount, command.Now.UTC().UnixMilli(), bidID, int(requestTTL.Seconds())).Text()
+	if err != nil {
+		return BidResult{}, err
+	}
+
+	parsed := bidScriptResult{}
+	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
+		return BidResult{}, err
+	}
+	if !parsed.OK {
+		return BidResult{NextMinimum: parsed.NextMinimum}, scriptBidError(parsed)
+	}
+
+	snapshot, err := s.Snapshot(command.AuctionID, command.UserID)
+	if err != nil {
+		return BidResult{}, err
+	}
+	return BidResult{
+		BidID:       parsed.BidID,
+		Snapshot:    snapshot,
+		NextMinimum: parsed.NextMinimum,
+		Extended:    parsed.Extended,
+		Idempotent:  parsed.Idempotent,
+	}, nil
+}
+
 func (s *RedisStore) loadSnapshot(ctx context.Context, auctionID string) (auction.Snapshot, error) {
 	values, err := s.client.HGetAll(ctx, AuctionSnapshotKey(auctionID)).Result()
 	if err != nil {
@@ -204,4 +261,21 @@ func parseInt(values map[string]string, key string) (int64, error) {
 		return 0, fmt.Errorf("parse snapshot field %s: %w", key, err)
 	}
 	return parsed, nil
+}
+
+func scriptBidError(result bidScriptResult) error {
+	switch result.Error {
+	case "not_found":
+		return ErrAuctionNotFound
+	case "status":
+		return fmt.Errorf("%w: auction status is %s", ErrBidRejected, result.Status)
+	case "expired":
+		return fmt.Errorf("%w: auction already ended", ErrBidRejected)
+	case "low_bid":
+		return fmt.Errorf("%w: amount must be at least %d", ErrBidRejected, result.NextMinimum)
+	case "increment":
+		return fmt.Errorf("%w: amount must follow increment", ErrBidRejected)
+	default:
+		return fmt.Errorf("%w: redis bid rejected", ErrBidRejected)
+	}
 }

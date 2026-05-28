@@ -150,7 +150,7 @@ func TestStoreConcurrentBidsNeverDecreasePrice(t *testing.T) {
 			_, _ = store.PlaceBid(BidCommand{
 				AuctionID: "auction-1",
 				UserID:    "user",
-				RequestID: "req-concurrent-" + string(rune('a'+i)),
+				RequestID: fmt.Sprintf("req-concurrent-%d", i),
 				Amount:    int64(i * 100),
 				Now:       now,
 			})
