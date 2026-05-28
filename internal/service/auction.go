@@ -2,7 +2,9 @@
 package service
 
 import (
+	"context"
 	"fmt"
+	"log"
 	"sync"
 	"time"
 
@@ -13,12 +15,17 @@ import (
 )
 
 type AuctionService struct {
-	repo       repository.AuctionRepository
-	store      redis.Store
-	hub        *ws.Hub
-	settlement *SettlementService
-	timerMu    sync.Mutex
-	timers     map[string]*time.Timer
+	repo           repository.AuctionRepository
+	store          redis.Store
+	hub            *ws.Hub
+	eventPublisher EventPublisher
+	settlement     *SettlementService
+	timerMu        sync.Mutex
+	timers         map[string]*time.Timer
+}
+
+type EventPublisher interface {
+	Publish(ctx context.Context, event ws.Event) error
 }
 
 // NewAuctionService 组装竞拍应用服务依赖。
@@ -30,6 +37,14 @@ func NewAuctionService(repo repository.AuctionRepository, store redis.Store, hub
 		settlement: NewSettlementService(repo),
 		timers:     map[string]*time.Timer{},
 	}
+}
+
+func (s *AuctionService) SetEventPublisher(publisher EventPublisher) {
+	s.eventPublisher = publisher
+}
+
+func (s *AuctionService) BroadcastExternal(event ws.Event) {
+	s.hub.Broadcast(event)
 }
 
 // CreateAuction 创建 DRAFT 竞拍。
@@ -74,7 +89,7 @@ func (s *AuctionService) StartAuctionBy(id string, now time.Time, actor auction.
 	}
 	snapshot = s.enrichLeaderboard(snapshot)
 	s.scheduleFinish(id, snapshot.EndsAt)
-	s.hub.Broadcast(ws.Event{Type: ws.EventSnapshot, AuctionID: id, Snapshot: snapshot, Meta: actorMeta(actor)})
+	s.broadcast(ws.Event{Type: ws.EventSnapshot, AuctionID: id, Snapshot: snapshot, Meta: actorMeta(actor)})
 	return snapshot, nil
 }
 
@@ -101,7 +116,7 @@ func (s *AuctionService) CancelAuctionBy(id string, now time.Time, actor auction
 	}
 	snapshot = s.enrichLeaderboard(snapshot)
 	s.stopFinishTimer(id)
-	s.hub.Broadcast(ws.Event{Type: ws.EventAuctionCancelled, AuctionID: id, Snapshot: snapshot, Reason: "merchant_cancelled", Meta: actorMeta(actor)})
+	s.broadcast(ws.Event{Type: ws.EventAuctionCancelled, AuctionID: id, Snapshot: snapshot, Reason: "merchant_cancelled", Meta: actorMeta(actor)})
 	return snapshot, nil
 }
 
@@ -149,7 +164,7 @@ func (s *AuctionService) PlaceBid(command redis.BidCommand) (redis.BidResult, er
 		eventType = ws.EventAuctionExtended
 		reason = "bid_near_end"
 	}
-	s.hub.Broadcast(ws.Event{Type: eventType, AuctionID: command.AuctionID, Snapshot: result.Snapshot, Reason: reason, Meta: bidMeta(command)})
+	s.broadcast(ws.Event{Type: eventType, AuctionID: command.AuctionID, Snapshot: result.Snapshot, Reason: reason, Meta: bidMeta(command)})
 	return result, nil
 }
 
@@ -164,7 +179,7 @@ func (s *AuctionService) FinishExpired(id string, now time.Time) (auction.Snapsh
 	}
 	snapshot = s.enrichLeaderboard(snapshot)
 	s.stopFinishTimer(id)
-	s.hub.Broadcast(ws.Event{Type: ws.EventAuctionEnded, AuctionID: id, Snapshot: snapshot, Reason: "time_expired"})
+	s.broadcast(ws.Event{Type: ws.EventAuctionEnded, AuctionID: id, Snapshot: snapshot, Reason: "time_expired"})
 	return snapshot, nil
 }
 
@@ -186,6 +201,18 @@ func (s *AuctionService) GetResult(id string) (map[string]any, error) {
 // Subscribe 订阅指定竞拍房间的事件。
 func (s *AuctionService) Subscribe(id string) (<-chan ws.Event, func()) {
 	return s.hub.Subscribe(id)
+}
+
+func (s *AuctionService) broadcast(event ws.Event) {
+	s.hub.Broadcast(event)
+	if s.eventPublisher == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := s.eventPublisher.Publish(ctx, event); err != nil {
+		log.Printf("publish redis auction event: %v", err)
+	}
 }
 
 // syncAuctionFromSnapshot 将实时快照收敛回 repository，并在 SOLD 时触发结算。
