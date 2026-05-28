@@ -34,3 +34,11 @@ npm run dev -- --host 0.0.0.0 --port 5173
 - 用户C：`userC / 123456`
 
 如果 8080 或 5173 被占用，先停掉对应进程，或改端口。
+
+## 依赖顺序
+
+1. `docker compose up -d redis mysql`
+2. 后端 `go run ./cmd/api`
+3. 前端 `npm run dev`
+
+如果登录或出价接口返回网络错误，先检查后端是否已启动；如果后端启动失败，先检查 Redis 容器是否健康。

@@ -62,3 +62,29 @@ http://localhost:5173
 - 自然结束：有最高出价时进入 `SOLD`，无有效出价时进入 `ENDED`
 - 取消竞拍：运行中竞拍可取消并广播 `CANCELLED`
 - 重连恢复：刷新用户页面后重新获取最新快照
+
+## 本地启动（Docker Redis）
+
+先启动依赖：
+
+```powershell
+docker compose up -d redis mysql
+```
+
+启动后端：
+
+```powershell
+$env:REDIS_ADDR="127.0.0.1:6379"
+$env:HTTP_ADDR="127.0.0.1:8080"
+go run ./cmd/api
+```
+
+启动前端：
+
+```powershell
+cd web
+$env:VITE_API_BASE="http://127.0.0.1:8080"
+npm run dev -- --host 127.0.0.1 --port 5173
+```
+
+当前阶段 Redis 将承载实时竞拍状态；MySQL 只在 Docker Compose 中预留，业务数据仍写入 `data/*.json`。
