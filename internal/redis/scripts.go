@@ -92,3 +92,40 @@ local result = cjson.encode({
 redis.call("SET", requestKey, result, "EX", requestTTLSeconds)
 return result
 `
+
+const cancelScript = `
+local snapshotKey = KEYS[1]
+local nowMs = tonumber(ARGV[1])
+if redis.call("EXISTS", snapshotKey) == 0 then
+  return cjson.encode({ok=false, error="not_found"})
+end
+local status = redis.call("HGET", snapshotKey, "status")
+if status ~= "DRAFT" and status ~= "RUNNING" then
+  return cjson.encode({ok=false, error="status", status=status})
+end
+redis.call("HSET", snapshotKey, "status", "CANCELLED", "serverTimeUnixMs", nowMs)
+return cjson.encode({ok=true})
+`
+
+const finishExpiredScript = `
+local snapshotKey = KEYS[1]
+local nowMs = tonumber(ARGV[1])
+if redis.call("EXISTS", snapshotKey) == 0 then
+  return cjson.encode({ok=false, error="not_found"})
+end
+local status = redis.call("HGET", snapshotKey, "status")
+local endsAtMs = tonumber(redis.call("HGET", snapshotKey, "endsAtUnixMs"))
+local highestBidder = redis.call("HGET", snapshotKey, "highestBidder")
+if status ~= "RUNNING" then
+  return cjson.encode({ok=false, error="status", status=status})
+end
+if nowMs < endsAtMs then
+  return cjson.encode({ok=false, error="not_expired"})
+end
+local newStatus = "ENDED"
+if highestBidder and highestBidder ~= "" then
+  newStatus = "SOLD"
+end
+redis.call("HSET", snapshotKey, "status", newStatus, "serverTimeUnixMs", nowMs)
+return cjson.encode({ok=true, status=newStatus})
+`

@@ -135,6 +135,50 @@ func (s *RedisStore) PlaceBid(command BidCommand) (BidResult, error) {
 	}, nil
 }
 
+type stateScriptResult struct {
+	OK     bool           `json:"ok"`
+	Error  string         `json:"error"`
+	Status auction.Status `json:"status"`
+}
+
+func (s *RedisStore) Cancel(auctionID string, now time.Time) (auction.Snapshot, error) {
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	ctx := context.Background()
+	raw, err := s.client.Eval(ctx, cancelScript, []string{AuctionSnapshotKey(auctionID)}, now.UTC().UnixMilli()).Text()
+	if err != nil {
+		return auction.Snapshot{}, err
+	}
+	parsed := stateScriptResult{}
+	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
+		return auction.Snapshot{}, err
+	}
+	if !parsed.OK {
+		return auction.Snapshot{}, scriptStateError(parsed, "cancel")
+	}
+	return s.Snapshot(auctionID, "")
+}
+
+func (s *RedisStore) FinishExpired(auctionID string, now time.Time) (auction.Snapshot, error) {
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	ctx := context.Background()
+	raw, err := s.client.Eval(ctx, finishExpiredScript, []string{AuctionSnapshotKey(auctionID)}, now.UTC().UnixMilli()).Text()
+	if err != nil {
+		return auction.Snapshot{}, err
+	}
+	parsed := stateScriptResult{}
+	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
+		return auction.Snapshot{}, err
+	}
+	if !parsed.OK {
+		return auction.Snapshot{}, scriptStateError(parsed, "finish")
+	}
+	return s.Snapshot(auctionID, "")
+}
+
 func (s *RedisStore) loadSnapshot(ctx context.Context, auctionID string) (auction.Snapshot, error) {
 	values, err := s.client.HGetAll(ctx, AuctionSnapshotKey(auctionID)).Result()
 	if err != nil {
@@ -277,5 +321,18 @@ func scriptBidError(result bidScriptResult) error {
 		return fmt.Errorf("%w: amount must follow increment", ErrBidRejected)
 	default:
 		return fmt.Errorf("%w: redis bid rejected", ErrBidRejected)
+	}
+}
+
+func scriptStateError(result stateScriptResult, action string) error {
+	switch result.Error {
+	case "not_found":
+		return ErrAuctionNotFound
+	case "status":
+		return fmt.Errorf("%w: cannot %s status %s", ErrBidRejected, action, result.Status)
+	case "not_expired":
+		return fmt.Errorf("%w: auction has not ended", ErrBidRejected)
+	default:
+		return fmt.Errorf("%w: redis state transition rejected", ErrBidRejected)
 	}
 }

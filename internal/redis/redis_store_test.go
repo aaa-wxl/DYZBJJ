@@ -201,3 +201,63 @@ func TestRedisStoreCeilingPriceWinsOverExtension(t *testing.T) {
 		t.Fatal("ceiling bid should not extend auction")
 	}
 }
+
+func TestRedisStoreCancelAllowsDraftAndRunning(t *testing.T) {
+	store, _ := newRedisStoreForTest(t)
+	now := time.Unix(100, 0).UTC()
+	snapshot := startedSnapshot(now)
+	snapshot.Status = auction.StatusDraft
+	if err := store.InitAuction(snapshot); err != nil {
+		t.Fatal(err)
+	}
+
+	cancelled, err := store.Cancel("auction-redis-1", now)
+	if err != nil {
+		t.Fatalf("cancel: %v", err)
+	}
+	if cancelled.Status != auction.StatusCancelled {
+		t.Fatalf("Status = %s", cancelled.Status)
+	}
+}
+
+func TestRedisStoreFinishExpiredSellsWhenHighestBidderExists(t *testing.T) {
+	store, _ := newRedisStoreForTest(t)
+	now := time.Unix(100, 0).UTC()
+	snapshot := startedSnapshot(now)
+	snapshot.EndsAt = now.Add(-time.Second)
+	snapshot.Rules.ExtendThreshold = 0
+	snapshot.Rules.ExtendBy = 0
+	if err := store.InitAuction(snapshot); err != nil {
+		t.Fatal(err)
+	}
+	_, err := store.PlaceBid(BidCommand{AuctionID: "auction-redis-1", UserID: "user-a", RequestID: "req-a", Amount: 100, Now: now.Add(-2 * time.Second)})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	finished, err := store.FinishExpired("auction-redis-1", now)
+	if err != nil {
+		t.Fatalf("finish: %v", err)
+	}
+	if finished.Status != auction.StatusSold {
+		t.Fatalf("Status = %s", finished.Status)
+	}
+}
+
+func TestRedisStoreFinishExpiredEndsWhenNoBidderExists(t *testing.T) {
+	store, _ := newRedisStoreForTest(t)
+	now := time.Unix(100, 0).UTC()
+	snapshot := startedSnapshot(now)
+	snapshot.EndsAt = now.Add(-time.Second)
+	if err := store.InitAuction(snapshot); err != nil {
+		t.Fatal(err)
+	}
+
+	finished, err := store.FinishExpired("auction-redis-1", now)
+	if err != nil {
+		t.Fatalf("finish: %v", err)
+	}
+	if finished.Status != auction.StatusEnded {
+		t.Fatalf("Status = %s", finished.Status)
+	}
+}
