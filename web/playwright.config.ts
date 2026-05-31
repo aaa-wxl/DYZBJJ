@@ -18,7 +18,7 @@ export default defineConfig({
   ],
   webServer: [
     {
-      command: "set HTTP_ADDR=127.0.0.1:18080&& go run ../cmd/api",
+      command: "set HTTP_ADDR=127.0.0.1:18080&& set REDIS_ADDR=127.0.0.1:6379&& go run ../cmd/api",
       url: "http://127.0.0.1:18080/healthz",
       reuseExistingServer: false,
       timeout: 30_000

@@ -49,6 +49,7 @@ test("JWT 多用户出价后两端实时刷新 Top 5，刷新后身份稳定", a
   await expect(admin.getByText("用户B").first()).toBeVisible();
   await expect(admin.getByText("¥200").first()).toBeVisible();
   await expect(userA.getByText("用户B").first()).toBeVisible();
+  await expect(userB.locator(".mobile-event-log p").filter({ hasText: "用户B 出价 ¥200" })).toHaveCount(1);
   await expect(userA.getByText("第 2")).toBeVisible();
 
   await userA.reload();

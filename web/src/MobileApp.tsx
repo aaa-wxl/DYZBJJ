@@ -119,7 +119,6 @@ export function MobileApp({ session, onLogout }: MobileAppProps) {
     try {
       const result = await placeBid(session.token, selectedId, bidAmount);
       applySnapshot(result.snapshot);
-      appendLog(`${session.user.displayName} 出价 ${currency(result.snapshot.currentPrice)}`);
       if (result.snapshot.status === "SOLD") {
         const finalResult = await getResult(session.token, selectedId);
         setMessage(finalResult.order ? `成交价 ${currency(finalResult.order.finalPrice)}` : "已成交");
