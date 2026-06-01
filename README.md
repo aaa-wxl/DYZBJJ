@@ -20,6 +20,10 @@
 - 达到封顶价后立即成交，到点自动结算；成交后生成 `PENDING_PAYMENT` 订单
 - WebSocket 断开后前端自动重连，并通过 snapshot 恢复最新竞拍状态
 
+## 技术架构
+
+![实时竞拍大师系统架构图](docs/system-architecture.png)
+
 ## 本地启动
 
 ### 1. 启动依赖
@@ -139,4 +143,3 @@ migrations/           MySQL 表结构预留
 web/                  React + TypeScript 前端
 docs/                 设计文档和实现计划
 ```
-
