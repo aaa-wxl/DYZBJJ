@@ -14,3 +14,5 @@ data/
 data
 .gocache/
 .gocache
+*.mp4
+/package-lock.json
